@@ -96,7 +96,7 @@ class EvidenceWorkspaceTest(unittest.TestCase):
 
     def test_relationship_grammar_is_not_part_of_named_institution(self):
         for query in (
-            '用户本人（ep-user）与某市农学院是什么关系？',
+            '用户本人（liuzhongyang）与某市农学院是什么关系？',
             '我与某市农学院的关系；包括某市农学院 智慧教室 项目、工作、客户关系。',
             '我和某省工业大学是什么关系？',
             '我跟某市职业技术师范大学有什么关系？',
