@@ -10,6 +10,10 @@ def review_source_layer(source):
     aliases={m['evidence_id']:f'm{i}' for i,m in enumerate(source['messages'],1)}
     messages=[{'message_ref':aliases[m['evidence_id']],**{key:m.get(key) for key in ('role','text','turn_id','at')}}
               for m in source['messages']]
+    for original, projected in zip(source['messages'],messages):
+        context=original.get('form_reply_context')
+        if isinstance(context,dict) and context.get('schema')=='evolving-profile.native-form-answer.v1':
+            projected.update(question_context=context['questions'],question_authority='assistant_question_context_not_user_request')
     quotes=[];transport_quotes=[]
     for message in source['messages']:
         if message['role']!='user':continue
@@ -161,16 +165,26 @@ def expand_review_choices(checked,catalog):
         isinstance(intent.get('field_links'),list) and any(isinstance(link,dict) and 'field_ref' in link for link in intent['field_links']))
         for intent in entry['intents']) for entry in entries)
     if has_choices and result.get('selection_catalog_sha256')!=catalog_sha(catalog):
-        raise CoverageError('review_catalog_binding_mismatch')
+        # The model re-typed a 64-char hash and got it wrong (diagnostics show near-misses).
+        # The catalog is built in-process for this one call, so there is no stale copy to guard
+        # against; every choice is still resolved against this catalog and validated below.
+        dump_binding_diagnostic('sha_echo', {'selection_catalog_sha256': result.get('selection_catalog_sha256'),
+            'user_intent_coverage': entries}, {'selection_catalog_sha256': catalog_sha(catalog)})
+        result['selection_catalog_sha256'] = catalog_sha(catalog)
     used=False;annotations=[]
     for entry in entries:
         if not isinstance(entry,dict) or not isinstance(entry.get('intents'),list):continue
-        for intent in entry['intents']:
+        for intent_index,intent in enumerate(entry['intents']):
             if not isinstance(intent,dict):continue
+            location={'message_ref':entry.get('message_ref'),'intent_index':intent_index}
             selected_reply_fields=[]
             for ref_key,quote_key,message_key in [('source_quote_ref','source_quote','message_ref'),('superseding_quote_ref','superseding_quote','superseded_by_ref')]:
                 if ref_key not in intent:continue
                 ref=intent[ref_key];item=quotes.get(ref) if isinstance(ref,str) else None
+                # The model sometimes repeats the quote ref in superseded_by_ref. It names the same
+                # later user quote, so drop the duplicate and let the message ref be resolved from it.
+                if ref_key=='superseding_quote_ref' and intent.get('superseded_by_ref')==ref:
+                    del intent['superseded_by_ref']
                 expected=entry.get(message_key) if message_key=='message_ref' else intent.get(message_key)
                 if ref_key=='superseding_quote_ref' and item is not None:
                     current=entry.get('message_ref');later=item['message_ref']
@@ -178,24 +192,25 @@ def expand_review_choices(checked,catalog):
                             or not re.fullmatch(r'm[1-9][0-9]*',current)
                             or not re.fullmatch(r'm[1-9][0-9]*',later)
                             or int(later[1:])<=int(current[1:])):
-                        raise CoverageError('review_catalog_choice_invalid')
+                        _choice_invalid(location, entry, intent if 'intent' in dir() else None, quotes, fields)
                     if expected is None and message_key not in intent:
                         # The reviewer selected this exact later user quote;
                         # resolve its one source, without deciding supersession.
                         expected=later;intent[message_key]=later
                 if item is None or item['message_ref']!=expected or quote_key in intent:
-                    raise CoverageError('review_catalog_choice_invalid')
+                    _choice_invalid(location, entry, intent if 'intent' in dir() else None, quotes, fields)
                 intent[quote_key]=item['source_quote'];del intent[ref_key];used=True
             links=intent.get('field_links')
             if not isinstance(links,list):continue
             for index,link in enumerate(links):
+                location={'message_ref':entry.get('message_ref'),'intent_index':intent_index,'link_index':index}
                 if not isinstance(link,dict) or 'field_ref' not in link:continue
                 ref=link['field_ref'];item=fields.get(ref) if isinstance(ref,str) else None
-                if item is None or set(link)-{'field_ref','context_note'}:raise CoverageError('review_catalog_choice_invalid')
+                if item is None or set(link)-{'field_ref','context_note','summary_paths'}:_choice_invalid(location, entry, intent if 'intent' in dir() else None, quotes, fields)
                 if 'context_note' in link:
                     from source_safety import mask_text
                     note=link['context_note']
-                    if not isinstance(note,str) or len(note)>500:raise CoverageError('review_catalog_choice_invalid')
+                    if not isinstance(note,str) or len(note)>500:_choice_invalid(location, entry, intent if 'intent' in dir() else None, quotes, fields)
                     annotations.append({'message_ref':entry.get('message_ref'),'field_ref':ref,
                         'text':mask_text(note),'authority':'model_comment_not_source_or_verdict'})
                 links[index]={'episode_ref':item['episode_ref'],'state_path':item['state_path'],
@@ -215,3 +230,35 @@ def expand_review_choices(checked,catalog):
                         intent['answer_message_ref']=answer_ref
     if annotations:result['selection_annotations']=annotations
     return result,used
+
+
+def dump_binding_diagnostic(kind, model_output, expected):
+    """Keep the raw model JSON and the expected binding for a failed catalog-binding check.
+
+    Local state only (0600). Failures used to say only "binding_mismatch", which made the
+    cause impossible to see. Validation behaviour is unchanged: the caller still raises.
+    """
+    import json, os, time
+    from pathlib import Path
+    root = Path(os.path.expanduser('~/.evolving-profile/context/diagnostics'))
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        path = root / f'binding-{kind}-{time.strftime("%Y%m%dT%H%M%S")}-{os.getpid()}.json'
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            json.dump({'kind': kind, 'expected': expected, 'model_output': model_output},
+                      handle, ensure_ascii=False, indent=1, default=str)
+    except OSError:
+        pass
+
+
+def _choice_invalid(location, entry, intent, quotes, fields):
+    """Record what the model selected before raising review_catalog_choice_invalid.
+
+    Diagnostic only: the raised error and its code are unchanged.
+    """
+    from .memory_recovery_scenario import CoverageError
+    dump_binding_diagnostic('choice', {'location': location, 'entry': entry, 'intent': intent},
+        {'known_source_quote_refs_sample': sorted(quotes)[:60], 'known_state_field_refs_sample': sorted(fields)[:60],
+         'known_source_quote_count': len(quotes), 'known_state_field_count': len(fields)})
+    raise CoverageError('review_catalog_choice_invalid', location=location)

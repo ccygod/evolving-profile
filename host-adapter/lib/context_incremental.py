@@ -473,10 +473,37 @@ def _navigation_title(paths):
     return ''
 
 
+def _failure_code(error):
+    code = getattr(error, 'code', None)
+    if isinstance(code, int):
+        return f'http_{code}'
+    return type(error).__name__
+
+
+def _probe_provider_models(config):
+    """Health probe that exercises the same path as real jobs: one tiny chat request.
+
+    /models answered while chat completions were blocked, so it gave false "healthy" results.
+    Costs a handful of tokens per probe, at most once per PROBE_INTERVAL.
+    """
+    import urllib.request
+    try:
+        body = json.dumps({'model': config['EVOLVING_PROFILE_API_LLM_MODEL'], 'max_tokens': 1,
+                           'messages': [{'role': 'user', 'content': 'ping'}]}).encode()
+        request = urllib.request.Request(
+            config['EVOLVING_PROFILE_API_LLM_BASE_URL'].rstrip('/') + '/chat/completions', data=body,
+            headers={'content-type': 'application/json',
+                     'authorization': 'Bearer ' + config['EVOLVING_PROFILE_API_LLM_API_KEY']})
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return 200 <= response.status < 300
+    except Exception:
+        return False
+
+
 def process_summary(source, row, session_root, config):
-    from .scenario_model import request_episode_bundle, request_episode_bundle_review
+    from .scenario_model import request_episode_bundle, request_episode_bundle_review, fingerprint_episode_bundle
     from .memory_recovery_scenario import (request_source_coverage_review, publish_automated_session,
-                                          MandatorySourceBudgetError,MAX_COVERAGE_INPUT_CHARS)
+        CoverageError,RESELECTABLE_MAPPING_ERRORS,MandatorySourceBudgetError,MAX_COVERAGE_INPUT_CHARS,MAX_SOURCE_CHARS)
     from .scenario_review_catalog import mandatory_source_review_lower_bound
     lower_bound=mandatory_source_review_lower_bound(source)
     if lower_bound is not None and lower_bound>MAX_COVERAGE_INPUT_CHARS:
@@ -491,12 +518,79 @@ def process_summary(source, row, session_root, config):
         bundle, checkpoint = load_or_generate(source, params, checkpoint_root, request_episode_bundle)
     else:
         bundle = request_episode_bundle(source, **params)
+    configured_passes = config.get('_scenario_draft_repair_passes', 1)
+    repair_passes = min(1, max(0, configured_passes)) if type(configured_passes) is int else 0
+    active_params = params
+    repair_guard = None
     try:
-        # A reusable draft is not acceptance: both independent review stages
-        # and the exact publication/source gates run again on every attempt.
-        review = request_episode_bundle_review(source, bundle, **params)
-        audit = request_source_coverage_review(source, bundle, **params)
-        return publish_automated_session(row, source, bundle, review, audit, session_root)
+        for repair_index in range(repair_passes + 1):
+            # A reusable draft is not acceptance: both independent review stages
+            # and the exact publication/source gates run again on every attempt.
+            if repair_guard is not None: repair_guard()
+            source_snapshot = json.dumps(source, sort_keys=True, ensure_ascii=False)
+            bundle_sha = fingerprint_episode_bundle(bundle)
+            review = request_episode_bundle_review(source, bundle, **active_params)
+            try:
+                audit = request_source_coverage_review(source, bundle, **active_params)
+            except CoverageError as error:
+                detail = error.safe_detail()
+                ref = (detail.get('location') or {}).get('message_ref')
+                user_refs = {f'm{i}' for i, message in enumerate(source['messages'], 1) if message['role'] == 'user'}
+                if (repair_index >= repair_passes or detail['reason'] not in RESELECTABLE_MAPPING_ERRORS
+                        or ref not in user_refs or review.get('status') != 'model_review_passed'
+                        or review.get('issues') != [] or review.get('bundle_sha256') != bundle_sha
+                        or review.get('parent_source_revision') != source['source_revision']
+                        or fingerprint_episode_bundle(bundle) != bundle_sha
+                        or json.dumps(source, sort_keys=True, ensure_ascii=False) != source_snapshot):
+                    raise
+                # A new paid sweep needs current original source and permission,
+                # not only a stale in-memory draft. Keep the original failure
+                # when its location/binding cannot safely authorize that sweep.
+                state_root = config.get('_scenario_state_root')
+                try:
+                    from .scenario_episodes import validate_episode_bundle
+                    validate_episode_bundle(source, bundle)
+                    live = read_session_source(source['thread_id'], session_root, max_chars=MAX_SOURCE_CHARS)
+                    if (live.get('source_revision') != source['source_revision']
+                            or live.get('source_files') != source.get('source_files')
+                            or qualify_summary_input(live)['status'] != 'eligible'):
+                        raise ValueError('scenario_source_changed')
+                    permission = _require_summary_runtime_permission(state_root) if state_root is not None else None
+                    paths = [Path(path) for path in source['source_files']]
+                    raw_revision = _revision(paths)
+                except (OSError, ValueError, KeyError):
+                    raise error
+                def check_repair_source():
+                    try:
+                        unchanged = (_revision(paths) == raw_revision and
+                            json.dumps(source, sort_keys=True, ensure_ascii=False) == source_snapshot)
+                    except OSError:
+                        unchanged = False
+                    if not unchanged: raise ValueError('scenario_source_changed')
+                    if state_root is not None: _require_summary_runtime_permission(state_root, permission)
+                def guarded_opener(request, timeout):
+                    import urllib.request
+                    check_repair_source()
+                    return urllib.request.urlopen(request, timeout=timeout)
+                # Invalidate the rejected draft before regeneration. No old
+                # checkpoint or accepted review is reused for the new fingerprint.
+                if checkpoint is not None:
+                    try: checkpoint.invalidate(str(error))
+                    except (OSError, ValueError): raise error
+                    checkpoint = None
+                from .scenario_draft_repair import request_episode_bundle_draft_repair
+                diagnostic = {**detail, 'source_revision':source['source_revision'], 'bundle_sha256':bundle_sha}
+                repair_guard = check_repair_source
+                active_params = {**params, 'opener':guarded_opener}
+                repair_guard()
+                try:
+                    bundle = request_episode_bundle_draft_repair(source, bundle, diagnostic, **active_params)
+                except ValueError as repair_error:
+                    if str(repair_error)=='scenario_draft_repair_no_content_change':raise error
+                    raise
+                continue
+            if repair_guard is not None: repair_guard()
+            return publish_automated_session(row, source, bundle, review, audit, session_root)
     except ValueError as error:
         if checkpoint is not None:
             try: checkpoint.invalidate(str(error))
@@ -877,6 +971,51 @@ class ContextIncremental:
         finally:
             if lease is not None:self.release_coverage_parent_lease(lease)
 
+    def _process_with_fallbacks(self, processor, source, row, config):
+        """Run one summary through the provider chain with a circuit breaker.
+
+        Primary is used while the breaker is closed. After repeated transport failures
+        the breaker opens and jobs go to the fallbacks directly; the primary is probed
+        with a cheap GET /models every PROBE_INTERVAL and returns to service when healthy.
+        Only transport failures (timeouts, connection errors, HTTP 401/403/429/5xx) move
+        to the next provider. Validation errors are never retried on another model.
+        """
+        import urllib.error
+        from . import provider_breaker as pb
+        now = time.time()
+        state = pb.load_state(self.root)
+        primary = config
+        fallbacks = []
+        for fb in config.get('_coverage_fallbacks') or []:
+            if isinstance(fb, dict) and all(isinstance(fb.get(k), str) and fb[k].strip() for k in ('model', 'base_url', 'api_key')):
+                fallbacks.append({**config,
+                    'EVOLVING_PROFILE_API_LLM_MODEL': fb['model'],
+                    'EVOLVING_PROFILE_API_LLM_BASE_URL': fb['base_url'],
+                    'EVOLVING_PROFILE_API_LLM_API_KEY': fb['api_key']})
+        route = pb.route(state, now)
+        if route == 'probe_then_route':
+            ok = _probe_provider_models(primary)
+            state = pb.record_probe(state, now, ok)
+            route = 'primary' if ok else 'fallback'
+            pb.save_state(self.root, state)
+        order = [primary, *fallbacks] if route == 'primary' else [*fallbacks, primary]
+        last = None
+        for candidate in order:
+            is_primary = candidate is primary
+            try:
+                result = processor(source, row, self.session_root, candidate)
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+                last = error
+                if is_primary:
+                    state = pb.record_failure(state, now, _failure_code(error))
+                    pb.save_state(self.root, state)
+                continue
+            if is_primary:
+                state = pb.record_success(state, now)
+                pb.save_state(self.root, state)
+            return result
+        raise last
+
     def run_once(self, config, *, now=None, processor=process_summary):
         job = self.claim(now=now)
         if not job: return {'status': 'idle'}
@@ -952,8 +1091,9 @@ class ContextIncremental:
                 return {'status': self.fail(job, 'scenario_knowledge_write_prohibited', now=now, terminal=True, protected=True)}
             processor_config = config
             if processor is process_summary:
-                processor_config = {**config, '_scenario_checkpoint_root': self.root / 'summary-checkpoints'}
-            published = processor(source, row, self.session_root, processor_config)
+                processor_config = {**config, '_scenario_checkpoint_root': self.root / 'summary-checkpoints',
+                                    '_scenario_state_root': self.root.parent}
+            published = self._process_with_fallbacks(processor, source, row, processor_config)
             if published.get('status') not in {'model_reviewed', 'episode_directory_ready'}:
                 raise ValueError('scenario_model_review_not_accepted')
             published={**published,'context_metadata_exclusions':source.get('context_metadata_exclusions') or [],
@@ -978,8 +1118,18 @@ class ContextIncremental:
             return {'status':self.fail(job,code,now=now,terminal=not retryable,failure_detail=detail),
                     'error_code':code,'session_id':job['session_id'],**({'failure_detail':detail} if detail is not None else {}),
                     **({'provider_calls':0,'raw_fallback_available':error.raw_available} if isinstance(error,MandatorySourceBudgetError) else {})}
-        except Exception:
-            return {'status': self.fail(job, 'scenario_provider_unavailable', now=now)}
+        except Exception as error:
+            # Same code as before (routing depends on it); the real exception type and HTTP status
+            # are kept in the failure detail so the next diagnosis does not start from zero.
+            detail = {'exception': type(error).__name__, 'http_status': getattr(error, 'code', None)}
+            import traceback as _tb
+            try:
+                from .scenario_review_catalog import dump_binding_diagnostic
+                dump_binding_diagnostic('unexpected', {'exception': type(error).__name__,
+                    'message': str(error)[:300], 'traceback': _tb.format_exc()[-3000:]}, {'job': job['session_id']})
+            except Exception:
+                pass
+            return {'status': self.fail(job, 'scenario_provider_unavailable', now=now, failure_detail=detail)}
 
     @_serialized
     def progress(self):
