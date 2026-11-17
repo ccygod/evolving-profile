@@ -12,8 +12,11 @@ LOCAL_ENV={'.env','.env.local','.env.development.local','.env.production.local',
 PATTERNS=[('api_key',re.compile(r'(?:sk-|gsk_)[A-Za-z0-9]{12,}')),
     ('cloud_key',re.compile(r'AKIA[0-9A-Z]{16}')),
     ('private_key',re.compile(r'BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY')),
-    ('personal_name',re.compile('\u5218\u4e2d\u6d0b')),
-    ('personal_bank',re.compile('liuzhongyang'+'-memory-core'))]
+    ('personal_name',re.compile('\u5218\u4e2d\u6d0b'))]
+# Operator-specific bank names are never stored in the repository. Set
+# EP_SCAN_PERSONAL_BANK to a bank name to have the scan flag it as well.
+if os.environ.get('EP_SCAN_PERSONAL_BANK'):
+    PATTERNS.append(('personal_bank',re.compile(re.escape(os.environ['EP_SCAN_PERSONAL_BANK']))))
 if len(Path.home().parts)>1:
     PATTERNS.append(('local_home_path',re.compile(re.escape(str(Path.home())))))
 
