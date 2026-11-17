@@ -221,9 +221,11 @@ guarantee that every old memory is correct or every future task will improve.
 
 ## Maturity at a glance
 
-**5.1.4 is the current candidate release; platform-specific validation boundaries remain explicit.**
+**5.1.5 is the current candidate release; platform-specific validation boundaries remain explicit.**
 
-The 5.1.4 release adds a source-fingerprinted AI repair path: failed operations can be diagnosed, repaired, or converted into an auditable AI report without a manual-review gate. It also reconciles visible scenario queues with executable worker jobs, expands source-envelope handling, and keeps report-only outcomes separate from successful publication.
+The 5.1.5 release stops repeated mental-model refresh failures from burning worker retries (back-off after repeated failures), adds provider failover with a circuit breaker for summary jobs, lets the console fetch a provider's model list for selection, and tightens the coverage audit against false positives. Provider API keys are no longer returned to the browser. EP is developed on top of [Hindsight](https://github.com/vectorize-io/hindsight); see [NOTICE.md](NOTICE.md).
+
+Full notes: [CHANGELOG-5.1.md](CHANGELOG-5.1.md).
 
 Product version comes from [VERSION](VERSION); channel/build metadata comes from
 the checked [release manifest](config/release-manifest.json). The current candidate
