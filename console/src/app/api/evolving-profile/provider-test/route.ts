@@ -33,6 +33,18 @@ async function effectiveApiKey() {
   } catch { return ""; }
 }
 
+// A masked key on the page means "the key saved for this provider slot", so resolve it from
+// runtime-settings for that slot. Reading the env file here used to test the wrong key.
+async function savedProviderKey(slot: unknown): Promise<string> {
+  if (slot === undefined || slot === null) return effectiveApiKey();
+  try {
+    const settings = JSON.parse(await readFile(epStatePath("config/runtime-settings.json"), "utf8"));
+    const providers = settings.providers ?? {};
+    const row = slot === "primary" ? providers.primary : (providers.fallbacks ?? [])[Number(slot)];
+    return String(row?.api_key ?? "");
+  } catch { return ""; }
+}
+
 export async function POST(request: Request) {
   try {
     const value = await request.json();
@@ -41,7 +53,7 @@ export async function POST(request: Request) {
     if (!baseUrl || !model) return NextResponse.json({ ok: false, error: "需要填写 Base URL 和模型名称" }, { status: 400 });
     const headers: Record<string, string> = { "content-type": "application/json" };
     const suppliedKey = String(value.api_key || "");
-    const apiKey = suppliedKey.startsWith("••••") ? await effectiveApiKey() : suppliedKey;
+    const apiKey = suppliedKey.startsWith("••••") ? await savedProviderKey(value.slot) : suppliedKey;
     if (apiKey && [...apiKey].some((character) => character.charCodeAt(0) > 255)) {
       return NextResponse.json({ ok: false, error: "API Key 含有非 ASCII 字符，请填写真实 API Key；页面中的掩码不能直接发送。" }, { status: 400 });
     }

@@ -39,7 +39,7 @@ async function modelFiles(root: string, depth = 0): Promise<string[]> {
     const files: string[] = [];
     for (const entry of entries) {
       const full = path.join(root, entry.name);
-      if (entry.isFile()) files.push(entry.name.toLowerCase());
+      if (entry.isFile() || entry.isSymbolicLink()) files.push(entry.name.toLowerCase());
       else if (entry.isDirectory() && !entry.name.startsWith(".")) files.push(...(await modelFiles(full, depth + 1)).map((item) => `${entry.name}/${item}`));
     }
     return files;
@@ -47,20 +47,27 @@ async function modelFiles(root: string, depth = 0): Promise<string[]> {
 }
 
 async function discoverLocalModelCandidates() {
-  const roots = [path.join(ROOT,"models"), path.join(ROOT,"eval"), ...(EP_MANAGED_MAC_HOST ? [path.join(homedir(),".cache/chroma/onnx_models")] : [])];
+  const roots = [
+    path.join(ROOT,"models"),
+    path.join(ROOT,"eval"),
+    ...(EP_MANAGED_MAC_HOST ? [path.join(homedir(),".cache/chroma/onnx_models"), path.join(homedir(),".cache/huggingface/hub")] : []),
+  ];
   const candidates: any[] = [];
   async function walk(root: string, depth = 0): Promise<void> {
     if (depth > 4) return;
     let entries: any[] = [];
     try { entries = await readdir(root, { withFileTypes: true }); } catch { return; }
-    const directFiles = entries.filter((entry) => entry.isFile()).map((entry) => entry.name.toLowerCase());
+    const directFiles = entries.filter((entry) => entry.isFile() || entry.isSymbolicLink()).map((entry) => entry.name.toLowerCase());
     const hasConfig = directFiles.includes("config.json") || await access(path.join(root, "encoder/config.json")).then(() => true).catch(() => false);
     const hasTokenizer = directFiles.some((file) => ["tokenizer.json", "tokenizer.model", "vocab.txt", "spiece.model"].includes(file)) || await access(path.join(root, "tokenizer/tokenizer.json")).then(() => true).catch(() => false);
     const hasWeights = directFiles.some((file) => /^(model\.onnx|pytorch_model.*\.(bin|safetensors)|model.*\.(bin|safetensors|gguf))$/.test(file)) || await access(path.join(root, "onnx/model.onnx")).then(() => true).catch(() => false);
     if (hasConfig && hasTokenizer && hasWeights) {
       let config: any = {};
-      for (const name of ["config.json", "encoder/config.json"]) { try { config = JSON.parse(await readFile(path.join(root, name), "utf8")); break; } catch { /* inspect next known location */ } }
-      const label = String(config._name_or_path || path.basename(root));
+      for (const name of ["config.json", "encoder/config.json"]) { try { config = JSON.parse(await readFile(path.join(/*turbopackIgnore: true*/ root, name), "utf8")); break; } catch { /* inspect next known location */ } }
+      // HuggingFace 缓存目录名形如 models--intfloat--multilingual-e5-small，还原为 org/name
+      const hubName = root.split(path.sep).find((segment) => segment.startsWith("models--"));
+      const hubLabel = hubName ? hubName.replace(/^models--/, "").split("--").join("/") : "";
+      const label = String(hubLabel || config._name_or_path || path.basename(root));
       const haystack = `${root} ${label}`.toLowerCase();
       const kind = /rerank|cross.encoder|bge-reranker/.test(haystack) ? "reranker" : "embedding";
       const modelRoot = path.basename(root).toLowerCase() === "onnx" ? path.dirname(root) : root;

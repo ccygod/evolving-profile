@@ -703,6 +703,7 @@ function RetrievalModelsPanel({ state, setState }: any) {
           fields={["model", "local_path", "dimensions", "device"]}
           kind="embedding"
           inventory={models.local_inventory}
+          profiles={models.embedding_profiles}
         />
         <ModelCard
           title={inlineUiText("重排模型（Rerank）")}
@@ -974,7 +975,32 @@ function RetrievalModelsPanel({ state, setState }: any) {
     </section>
   );
 }
-function ModelCard({ title, model, update, fields, inventory = [], kind }: any) {
+function ModelCard({ title, model, update, fields, inventory = [], kind, profiles = [] }: any) {
+  // 本地模型候选：默认用页面已加载的扫描结果，点击「获取本地模型」可重新扫描
+  const [scanned, setScanned] = useState<any[] | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const localOptions = (scanned ?? inventory).filter((item: any) => item.kind === kind);
+  const refreshLocal = async () => {
+    setScanning(true);
+    try {
+      const response = await fetch("/api/evolving-profile/retrieval-model-settings");
+      const body = await response.json();
+      if (!response.ok || !Array.isArray(body.local_inventory)) throw new Error(body.error || "scan_failed");
+      setScanned(body.local_inventory);
+    } catch {
+      setScanned([]);
+    } finally {
+      setScanning(false);
+    }
+  };
+  const pickLocal = (item: any) => {
+    update("model", item.model);
+    update("local_path", item.path);
+    if (item.dimensions) update("dimensions", item.dimensions);
+    // 档案 ID 与模型一致时沿用已有档案，避免保存时与 RAG 绑定错位
+    const profile = profiles.find((p: any) => p.model === item.model);
+    if (profile?.profile_id) update("profile_id", profile.profile_id);
+  };
   const choose = async () => {
     const response = await fetch("/api/evolving-profile/select-model-directory", {
       method: "POST",
@@ -1068,6 +1094,37 @@ function ModelCard({ title, model, update, fields, inventory = [], kind }: any) 
           </>
         )}
       </div>
+      {model.mode === "local" && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <ActionButton
+            type="button"
+            variant="outline"
+            className="rounded border px-3 py-2 text-xs"
+            onAction={refreshLocal}
+            disabled={scanning}
+          >
+            {inlineUiText("获取本地模型")}
+          </ActionButton>
+          {localOptions.length > 0 && (
+            <select
+              className="h-9 min-w-0 flex-1 rounded border bg-background px-2 font-mono text-xs"
+              value={localOptions.find((item: any) => item.path === model.local_path)?.path ?? ""}
+              onChange={(e) => {
+                const picked = localOptions.find((item: any) => item.path === e.target.value);
+                if (picked) pickLocal(picked);
+              }}
+            >
+              <option value="">{inlineUiText("请选择本地模型")}</option>
+              {localOptions.map((item: any) => (
+                <option key={item.path} value={item.path}>
+                  {item.model}
+                  {item.dimensions ? ` · ${item.dimensions}d` : ""}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
       {model.mode === "local" && (
         <div
           className={`mt-3 rounded border p-3 text-xs ${model.status === "model_path_missing" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}
@@ -1182,6 +1239,9 @@ function ProviderPanel({ state }: { state: any }) {
   useEffect(() => setDraft(state.runtimeSettings.providers), [state.runtimeSettings.providers]);
   const [message, setMessage] = useState<string | null>(null);
   const [testing, setTesting] = useState<number | "primary" | null>(null);
+  // 每个 Provider（primary 或 fallback 下标）各自获取到的模型列表，仅保存在页面内存中
+  const [modelOptions, setModelOptions] = useState<Record<string, string[]>>({});
+  const [fetchingModels, setFetchingModels] = useState<string | null>(null);
   const providers = [
     { key: "primary" as const, value: draft.primary ?? {} },
     ...(draft.fallbacks ?? []).map((value: any, index: number) => ({ key: index, value })),
@@ -1206,6 +1266,13 @@ function ProviderPanel({ state }: { state: any }) {
       ...draft,
       fallbacks: (draft.fallbacks ?? []).filter((_: any, i: number) => i !== index),
     });
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
+  // Only toggles how the field is drawn. The saved key is never sent back to the
+  // browser: the server returns a masked value, and an empty field keeps the saved key.
+  const toggleRevealKey = (key: "primary" | number) => {
+    const id = String(key);
+    setRevealedKeys((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
   const test = async (key: "primary" | number, value: any) => {
     setTesting(key);
     setMessage(null);
@@ -1213,7 +1280,7 @@ function ProviderPanel({ state }: { state: any }) {
       const response = await fetch("/api/evolving-profile/provider-test", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(value),
+        body: JSON.stringify({ ...value, slot: key }),
       });
       const body = await response.json();
       if (!response.ok || body.ok !== true)
@@ -1222,6 +1289,27 @@ function ProviderPanel({ state }: { state: any }) {
       throw new Error(friendlyProviderClientError(error));
     } finally {
       setTesting(null);
+    }
+  };
+  const fetchModels = async (key: "primary" | number, value: any) => {
+    const id = String(key);
+    setFetchingModels(id);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/evolving-profile/provider-models", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ base_url: value.base_url, api_key: value.api_key }),
+      });
+      const body = await response.json();
+      if (!response.ok || body.ok !== true || !Array.isArray(body.models))
+        throw new Error(body.error || inlineUiText("获取模型列表失败，请检查配置后重试。"));
+      setModelOptions((prev) => ({ ...prev, [id]: body.models }));
+      setMessage(inlineUiText(`已获取 ${body.models.length} 个模型，请在「模型名称」下拉框中选择`));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : inlineUiText("获取模型列表失败"));
+    } finally {
+      setFetchingModels(null);
     }
   };
   const save = async () => {
@@ -1273,12 +1361,31 @@ function ProviderPanel({ state }: { state: any }) {
             </label>
             <label className="space-y-1 text-xs">
               <span>{inlineUiText("模型名称")}</span>
-              <input
-                className="h-9 w-full rounded border bg-background px-2"
-                value={value.model ?? ""}
-                onChange={(e) => update(key, "model", e.target.value)}
-                placeholder={inlineUiText("模型 ID")}
-              />
+              {modelOptions[String(key)]?.length ? (
+                <select
+                  className="h-9 w-full rounded border bg-background px-2 font-mono"
+                  value={value.model ?? ""}
+                  onChange={(e) => update(key, "model", e.target.value)}
+                >
+                  {!modelOptions[String(key)].includes(value.model ?? "") && (
+                    <option value={value.model ?? ""}>
+                      {value.model ? `${value.model}（${inlineUiText("当前值")}）` : inlineUiText("请选择模型")}
+                    </option>
+                  )}
+                  {modelOptions[String(key)].map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="h-9 w-full rounded border bg-background px-2"
+                  value={value.model ?? ""}
+                  onChange={(e) => update(key, "model", e.target.value)}
+                  placeholder={inlineUiText("模型 ID（可先点击下方「获取模型列表」）")}
+                />
+              )}
             </label>
             <label className="space-y-1 text-xs md:col-span-2">
               <span>{inlineUiText("Base URL")}</span>
@@ -1291,15 +1398,34 @@ function ProviderPanel({ state }: { state: any }) {
             </label>
             <label className="space-y-1 text-xs">
               <span>{inlineUiText("API Key")}</span>
-              <input
-                type="password"
-                className="h-9 w-full rounded border bg-background px-2 font-mono"
-                value={value.api_key ?? ""}
-                onChange={(e) => update(key, "api_key", e.target.value)}
-                placeholder={inlineUiText("留空表示保留原 Key")}
-              />
+              <div className="flex gap-2">
+                <input
+                  type={revealedKeys[String(key)] ? "text" : "password"}
+                  className="h-9 w-full rounded border bg-background px-2 font-mono"
+                  value={value.api_key ?? ""}
+                  onChange={(e) => update(key, "api_key", e.target.value)}
+                  placeholder={inlineUiText("留空表示保留原 Key")}
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleRevealKey(key)}
+                  className="shrink-0 rounded border px-3 text-xs"
+                >
+                  {revealedKeys[String(key)] ? inlineUiText("隐藏") : inlineUiText("显示")}
+                </button>
+              </div>
             </label>
             <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={() => fetchModels(key, value)}
+                disabled={fetchingModels !== null || !value.base_url}
+                className="rounded border px-3 py-2 text-xs disabled:opacity-50"
+              >
+                {fetchingModels === String(key)
+                  ? inlineUiText("获取中…")
+                  : inlineUiText("获取模型列表")}
+              </button>
               <ActionButton
                 type="button"
                 variant="outline"
