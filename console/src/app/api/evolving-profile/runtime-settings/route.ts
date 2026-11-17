@@ -36,7 +36,7 @@ const defaults = {
 
 async function effectiveDefaults() {
   try {
-    const env = Object.fromEntries((await readFile(envPath, "utf8")).split("\n").filter((line) => line && !line.startsWith("#") && line.includes("=")).map((line) => { const index = line.indexOf("="); return [line.slice(0, index), line.slice(index + 1)]; }));
+    const env = Object.fromEntries((await readFile(/*turbopackIgnore: true*/ envPath, "utf8")).split("\n").filter((line) => line && !line.startsWith("#") && line.includes("=")).map((line) => { const index = line.indexOf("="); return [line.slice(0, index), line.slice(index + 1)]; }));
     return merge(defaults, { retrieval_models: { embedding: { provider: env.EVOLVING_PROFILE_API_EMBEDDINGS_PROVIDER || "onnx", model: env.EVOLVING_PROFILE_API_EMBEDDINGS_ONNX_MODEL_ID || "intfloat/multilingual-e5-small", dimensions: Number(env.EVOLVING_PROFILE_API_EMBEDDINGS_ONNX_DIMENSIONS || 384), max_tokens: Number(env.EVOLVING_PROFILE_API_EMBEDDINGS_ONNX_MAX_TOKENS || 512) }, reranker: { provider: env.EVOLVING_PROFILE_API_RERANKER_PROVIDER === "rrf" ? "local" : env.EVOLVING_PROFILE_API_RERANKER_PROVIDER || "local", model: env.EVOLVING_PROFILE_API_RERANKER_LOCAL_MODEL || "BAAI/bge-reranker-base" } }, providers: { primary: { name: env.EVOLVING_PROFILE_API_LLM_BASE_URL?.includes("127.0.0.1:3211") ? "Coding Plan" : env.EVOLVING_PROFILE_API_LLM_PROVIDER || "", base_url: env.EVOLVING_PROFILE_API_LLM_BASE_URL || "", model: env.EVOLVING_PROFILE_API_LLM_MODEL || "", api_key: env.EVOLVING_PROFILE_API_LLM_API_KEY || "" } } });
   } catch { return merge(defaults, {}); }
 }
@@ -71,7 +71,7 @@ async function modelFiles(root: string, depth = 0): Promise<string[]> {
     const files: string[] = [];
     for (const entry of entries) {
       const full = path.join(root, entry.name);
-      if (entry.isFile()) files.push(entry.name.toLowerCase());
+      if (entry.isFile() || entry.isSymbolicLink()) files.push(entry.name.toLowerCase());
       else if (entry.isDirectory() && !entry.name.startsWith(".")) files.push(...(await modelFiles(full, depth + 1)).map((item) => `${entry.name}/${item}`));
     }
     return files;
