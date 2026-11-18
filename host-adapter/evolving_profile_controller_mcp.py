@@ -908,6 +908,35 @@ TOOL = {
 }
 
 
+EXHAUSTIVE_SEARCH_TOOL = {
+    "name": "ep_exhaustive_search",
+    "description": (
+        "全量无截断 SQL 检索（只读，保证 100% 覆盖率，不设 12s 超时或 Top-K 截断）。"
+        "凡是按时间区间（如 8–10 月）、项目/客户、宿主或全库盘点查询，必须优先使用本工具获取全量分组与精确 total_matched，"
+        "再按需翻页或用 read_source 核对原文。"
+    ),
+    "inputSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "start_date": {"type": "string", "description": "起始日期（YYYY-MM-DD 或 ISO8601），可选。"},
+            "end_date": {"type": "string", "description": "结束日期（YYYY-MM-DD 或 ISO8601），可选。"},
+            "keywords": {"type": "array", "items": {"type": "string", "minLength": 1}, "maxItems": 16, "description": "可选关键词/别名列表（OR 匹配）。"},
+            "project": {"type": "string", "description": "项目名或路径子串过滤，可选。"},
+            "host": {"type": "string", "description": "宿主过滤（codex/claude-code/claude-desktop/trae 等），可选。"},
+            "fact_types": {"type": "array", "items": {"type": "string", "enum": ["world", "experience", "observation"]}, "description": "限定事实类型，可选。"},
+            "entity_category": {"type": "string", "enum": ["client_org", "person", "project", "product_tech", "location", "other"], "description": "按实体分类检索（如 client_org 查全部客户/机构），可选。"},
+            "time_mode": {"type": "string", "enum": ["either", "occurred", "mentioned"], "default": "either", "description": "时间口径：occurred(发生时间)、mentioned(提及时间)、either(优先发生时间)。"},
+            "group_by": {"type": "string", "enum": ["project", "month", "week", "host"], "default": "project", "description": "work_ledger 全量分组维度。"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
+            "offset": {"type": "integer", "minimum": 0, "default": 0},
+            "include_summaries": {"type": "boolean", "default": True},
+        },
+    },
+    "annotations": {"readOnlyHint": True, "openWorldHint": False},
+}
+
+
 for _tool in (TOOL,RESEARCH_TOOL,RESEARCH_PAGE_TOOL,SOURCE_TOOL,FIND_SOURCES_TOOL,
               CONTEXT_SUMMARY_TOOL,SCENARIO_SUMMARY_TOOL,SCENARIO_GATE_TOOL,SCENARIO_CONTEXT_SEARCH_TOOL,
               EXTERNAL_RAG_TOOL,AGENT_TRAJECTORY_TOOL,AGENT_DRAFT_TOOL,AGENT_PROMOTION_TOOL,
@@ -2343,7 +2372,7 @@ for line in (sys.stdin if __name__ == "__main__" else ()):
         elif method == "notifications/initialized":
             continue
         elif method == "tools/list":
-            tools=[TOOL, RESEARCH_TOOL, RESEARCH_PAGE_TOOL, SOURCE_TOOL, FIND_SOURCES_TOOL, THREAD_AUDIT_TOOL, GUIDANCE_TOOL, CHECK_TOOL, GUIDANCE_UNIT_TOOL, MEMORY_INSTRUCTIONS_TOOL,CATALOG_LIST_TOOL,CATALOG_SEARCH_TOOL,CATALOG_READ_TOOL,EVIDENCE_DECISION_TOOL,TASK_STATE_TOOL,SCENARIO_SUMMARY_TOOL,SCENARIO_GATE_TOOL,SCENARIO_CONTEXT_SEARCH_TOOL,EXTERNAL_RAG_TOOL,JEV_RISK_TOOL,AGENT_TRAJECTORY_TOOL,AGENT_DRAFT_TOOL,AGENT_PROMOTION_TOOL,AGENT_RECALL_TOOL,AGENT_RESEARCH_TOOL,AGENT_READ_TOOL,AGENT_CONTEXT_TOOL,AGENT_WORKSPACE_TOOL,AGENT_REVALIDATION_TOOL,AGENT_EVALUATION_TOOL,AGENT_ROLLOUT_TOOL,AGENT_CAPABILITY_TOOL] + ([PREFERENCE_TOOL, RUNTIME_GUIDANCE_TOOL] if PREFERENCE_TOOL and RUNTIME_GUIDANCE_TOOL else [])
+            tools=[TOOL, RESEARCH_TOOL, RESEARCH_PAGE_TOOL, SOURCE_TOOL, FIND_SOURCES_TOOL, EXHAUSTIVE_SEARCH_TOOL, THREAD_AUDIT_TOOL, GUIDANCE_TOOL, CHECK_TOOL, GUIDANCE_UNIT_TOOL, MEMORY_INSTRUCTIONS_TOOL,CATALOG_LIST_TOOL,CATALOG_SEARCH_TOOL,CATALOG_READ_TOOL,EVIDENCE_DECISION_TOOL,TASK_STATE_TOOL,SCENARIO_SUMMARY_TOOL,SCENARIO_GATE_TOOL,SCENARIO_CONTEXT_SEARCH_TOOL,EXTERNAL_RAG_TOOL,JEV_RISK_TOOL,AGENT_TRAJECTORY_TOOL,AGENT_DRAFT_TOOL,AGENT_PROMOTION_TOOL,AGENT_RECALL_TOOL,AGENT_RESEARCH_TOOL,AGENT_READ_TOOL,AGENT_CONTEXT_TOOL,AGENT_WORKSPACE_TOOL,AGENT_REVALIDATION_TOOL,AGENT_EVALUATION_TOOL,AGENT_ROLLOUT_TOOL,AGENT_CAPABILITY_TOOL] + ([PREFERENCE_TOOL, RUNTIME_GUIDANCE_TOOL] if PREFERENCE_TOOL and RUNTIME_GUIDANCE_TOOL else [])
             from lib.host_integration.policy import governed_mode,filter_tools
             reply(message_id, {'tools':filter_tools(tools) if governed_mode() else tools})
         elif method == "tools/call":
@@ -2415,6 +2444,24 @@ for line in (sys.stdin if __name__ == "__main__" else ()):
                 reply(message_id, read_context_summary(params.get('arguments') or {}))
             elif params.get('name') == 'scenario_gate':
                 reply(message_id, scenario_gate(params.get('arguments') or {}))
+            elif params.get('name') == 'ep_exhaustive_search':
+                from lib.exhaustive_query import exhaustive_search
+                args = params.get('arguments') or {}
+                value = exhaustive_search(
+                    start_date=args.get('start_date'),
+                    end_date=args.get('end_date'),
+                    keywords=args.get('keywords'),
+                    project=args.get('project'),
+                    host=args.get('host'),
+                    fact_types=args.get('fact_types'),
+                    entity_category=args.get('entity_category'),
+                    time_mode=str(args.get('time_mode') or 'either'),
+                    group_by=str(args.get('group_by') or 'project'),
+                    limit=int(args.get('limit') or 100),
+                    offset=int(args.get('offset') or 0),
+                    include_summaries=bool(args.get('include_summaries', True)),
+                )
+                reply(message_id, {'content':[{'type':'text','text':json.dumps(value,ensure_ascii=False)}], 'isError':False})
             elif params.get('name') == 'rag_search':
                 reply(message_id, {'content':[{'type':'text','text':json.dumps(search_external_rag(str((params.get('arguments') or {}).get('query') or ''), limit=int((params.get('arguments') or {}).get('limit') or 8),min_relevance=(params.get('arguments') or {}).get('minimum_relevance')),ensure_ascii=False)}],'isError':False})
             elif params.get('name') == 'review_operation_risk':

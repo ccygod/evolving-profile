@@ -11,8 +11,8 @@ def registry():
 
 def test_all_profiles_have_separate_capability_evidence():
     rows = registry()['profiles']
-    assert {r['id'] for r in rows} == {'codex','claude_code_cli','claude_code_desktop_local',
-        'claude_desktop_chat','hermes','workbuddy','doubao_work','generic_mcp'}
+    assert {r['id'] for r in rows} == {'codex','trae','claude_code_cli','claude_code_desktop_local',
+        'claude_desktop_chat','hermes','workbuddy','doubao_work','antigravity','generic_mcp'}
     assert all('macos' in r['platforms'] and 'windows' in r['platforms'] for r in rows)
     assert next(r for r in rows if r['id']=='doubao_work')['documented']['prompt_hook'] is None
 
