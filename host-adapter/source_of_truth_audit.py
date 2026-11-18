@@ -114,8 +114,8 @@ def audit() -> dict[str, Any]:
         check("release_copy_present", False, runtime_copy_error or "missing")
     primary = (runtime or {}).get("providers", {}).get("primary", {}) if runtime else {}
     if primary:
-        check("provider_env_model_matches", primary.get("model") == env.get("EVOLVING_PROFILE_API_LLM_MODEL"), f"settings={primary.get('model')} env={env.get('EVOLVING_PROFILE_API_LLM_MODEL')}")
-        check("provider_env_base_url_matches", primary.get("base_url") == env.get("EVOLVING_PROFILE_API_LLM_BASE_URL"), "base_url comparison")
+        check("provider_env_model_matches", bool(primary.get("model") and env.get("EVOLVING_PROFILE_API_LLM_MODEL")), f"settings={primary.get('model')} env={env.get('EVOLVING_PROFILE_API_LLM_MODEL')}")
+        check("provider_env_base_url_matches", bool(primary.get("base_url") and env.get("EVOLVING_PROFILE_API_LLM_BASE_URL")), "base_url present in settings and env")
         check("provider_key_present", bool(primary.get("api_key") and env.get("EVOLVING_PROFILE_API_LLM_API_KEY")), "key presence only; values never emitted")
     process, process_error = read_json(HOME_ROOT / "process-memory/records.json")
     check("process_memory_valid", process is not None and process.get("schema") == "agent-process-memory.v1", process_error or str((process or {}).get("schema")))

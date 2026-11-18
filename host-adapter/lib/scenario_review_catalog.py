@@ -165,12 +165,9 @@ def expand_review_choices(checked,catalog):
         isinstance(intent.get('field_links'),list) and any(isinstance(link,dict) and 'field_ref' in link for link in intent['field_links']))
         for intent in entry['intents']) for entry in entries)
     if has_choices and result.get('selection_catalog_sha256')!=catalog_sha(catalog):
-        # The model re-typed a 64-char hash and got it wrong (diagnostics show near-misses).
-        # The catalog is built in-process for this one call, so there is no stale copy to guard
-        # against; every choice is still resolved against this catalog and validated below.
         dump_binding_diagnostic('sha_echo', {'selection_catalog_sha256': result.get('selection_catalog_sha256'),
             'user_intent_coverage': entries}, {'selection_catalog_sha256': catalog_sha(catalog)})
-        result['selection_catalog_sha256'] = catalog_sha(catalog)
+        raise CoverageError('review_catalog_binding_mismatch')
     used=False;annotations=[]
     for entry in entries:
         if not isinstance(entry,dict) or not isinstance(entry.get('intents'),list):continue

@@ -69,6 +69,7 @@ def run_once(config,root):
                     op,
                     f"retention_retry_exhausted:{statuses[op]}",
                 )
+                base['retry_counts'].pop(op,None)
                 return finish('retry_quarantined',operation_id=op,bank_id=bank,quarantined_items=quarantined)
             try:
                 client._request('POST',f"/v1/default/banks/{urllib.parse.quote(bank,safe='')}/operations/{op}/retry",timeout=10)
@@ -78,6 +79,8 @@ def run_once(config,root):
     completed=sum(s=='completed' for s in statuses.values())
     if completed:
         q.reconcile(statuses);base['completed_total']+=completed
+    pending_ops=set(q.pending_operations())
+    base['retry_counts']={op:cnt for op,cnt in base.get('retry_counts',{}).items() if op in pending_ops}
     # Recover a lost acknowledgement before selecting a different batch. The
     # caller-supplied UUID makes a resend idempotent on the actual API.
     intent=previous.get('intent')
