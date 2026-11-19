@@ -201,3 +201,102 @@ def create_router_server(router: ModelRouter, host: str = "127.0.0.1", port: int
             return
 
     return ThreadingHTTPServer((host, port), Handler)
+
+
+def _parse_env(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not path.is_file():
+        return out
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        out[k.strip()] = v.strip().strip('"').strip("'")
+    return out
+
+
+def load_router_from_data_root(data_root: str | Path) -> ModelRouter:
+    """Build a unified ModelRouter from EP_DATA_ROOT/config/runtime-settings.json and profiles/evolving-profile-api.env."""
+    root = Path(data_root).expanduser()
+    settings_path = root / "config" / "runtime-settings.json"
+    env = _parse_env(root / "profiles" / "evolving-profile-api.env")
+
+    default_chain: list[ProviderEndpoint] = []
+    if settings_path.is_file():
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        providers = settings.get("providers") or {}
+        primary = providers.get("primary") or {}
+        if primary.get("base_url") and primary.get("model") and primary.get("api_key"):
+            default_chain.append(
+                ProviderEndpoint("settings_primary", primary["base_url"], primary["api_key"], primary["model"])
+            )
+        for idx, fb in enumerate(providers.get("fallbacks") or [], start=1):
+            if isinstance(fb, dict) and fb.get("base_url") and fb.get("model") and fb.get("api_key"):
+                default_chain.append(
+                    ProviderEndpoint(f"settings_fallback_{idx}", fb["base_url"], fb["api_key"], fb["model"])
+                )
+
+    api_chain: list[ProviderEndpoint] = []
+    api_url = env.get("EVOLVING_PROFILE_API_LLM_BASE_URL")
+    api_key = env.get("EVOLVING_PROFILE_API_LLM_API_KEY")
+    api_model = env.get("EVOLVING_PROFILE_API_LLM_MODEL")
+    if api_url and api_key and api_model:
+        api_chain.append(ProviderEndpoint("api_primary", api_url, api_key, api_model))
+    if env.get("EVOLVING_PROFILE_API_LLM_1_MODEL") and api_url and api_key:
+        api_chain.append(
+            ProviderEndpoint(
+                "api_fallback_1",
+                env.get("EVOLVING_PROFILE_API_LLM_1_BASE_URL") or api_url,
+                env.get("EVOLVING_PROFILE_API_LLM_1_API_KEY") or api_key,
+                env["EVOLVING_PROFILE_API_LLM_1_MODEL"],
+            )
+        )
+
+    reflect_chain: list[ProviderEndpoint] = []
+    r_model = env.get("EVOLVING_PROFILE_API_REFLECT_LLM_MODEL")
+    r_url = env.get("EVOLVING_PROFILE_API_REFLECT_LLM_BASE_URL") or api_url
+    r_key = env.get("EVOLVING_PROFILE_API_REFLECT_LLM_API_KEY") or api_key
+    if r_model and r_url and r_key:
+        reflect_chain.append(ProviderEndpoint("reflect_primary", r_url, r_key, r_model, timeout=150.0))
+    reflect_chain.extend(ep for ep in api_chain if ep.model != r_model)
+
+    if not default_chain:
+        default_chain = list(api_chain)
+    if not default_chain:
+        raise ValueError("no_configured_providers_found")
+
+    scopes: dict[str, list[ProviderEndpoint]] = {
+        "default": default_chain,
+        "context": default_chain,
+        "retain": api_chain or default_chain,
+        "consolidation": api_chain or default_chain,
+        "reflect": reflect_chain or api_chain or default_chain,
+        "guidance": api_chain or default_chain,
+    }
+    return ModelRouter(scopes, telemetry_path=root / "logs" / "v6-model-router-telemetry.jsonl")
+
+
+def main() -> int:
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser(description="EP v6 Unified Local Model Router")
+    parser.add_argument("--data-root", default=os.environ.get("EP_DATA_ROOT") or str(Path.home() / ".evolving-profile"))
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=12095)
+    args = parser.parse_args()
+    router = load_router_from_data_root(args.data_root)
+    server = create_router_server(router, host=args.host, port=args.port)
+    print(json.dumps({"status": "started", "host": args.host, "port": args.port, "scopes": router.snapshot()["scopes"]}, ensure_ascii=False), flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

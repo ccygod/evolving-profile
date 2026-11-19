@@ -10,10 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from v6.bootstrap import render_v6_daemon_plist, verify_code_data_separation
-from v6.daemon import ScheduledJob, SchedulerDaemon, create_daemon_control_server
+from v6.bootstrap import render_v6_daemon_plist, render_v6_router_plist, verify_code_data_separation
+from v6.daemon import ScheduledJob, SchedulerDaemon, build_production_jobs, create_daemon_control_server
 from v6.event_projector import classify_event_for_memory, project_bi_temporal_state
-from v6.model_router import ModelRouter, ProviderEndpoint, create_router_server
+from v6.model_router import ModelRouter, ProviderEndpoint, create_router_server, load_router_from_data_root
 
 
 def test_model_router_failover_circuit_breaker_and_recovery(tmp_path):
@@ -165,3 +165,37 @@ def test_bootstrap_code_data_separation_and_plist(tmp_path):
     assert bad["ok"] is False and "data_root_nested_inside_code_root" in bad["issues"]
     plist = render_v6_daemon_plist(python_bin="/usr/bin/python3", code_root=code, data_root=data)
     assert "com.evolving-profile.v6-daemon" in plist and str(code) in plist and str(data) in plist
+    rplist = render_v6_router_plist(python_bin="/usr/bin/python3", code_root=code, data_root=data)
+    assert "com.evolving-profile.v6-model-router" in rplist
+
+
+def test_load_router_from_data_root_and_production_jobs(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "profiles").mkdir()
+    (tmp_path / "config" / "runtime-settings.json").write_text(
+        json.dumps({
+            "providers": {
+                "primary": {"base_url": "https://p.invalid/v1", "api_key": "k1", "model": "m-primary"},
+                "fallbacks": [{"base_url": "https://f.invalid/v1", "api_key": "k2", "model": "m-fallback"}],
+            }
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / "profiles" / "evolving-profile-api.env").write_text(
+        "EVOLVING_PROFILE_API_LLM_BASE_URL=https://api.invalid/v1\n"
+        "EVOLVING_PROFILE_API_LLM_API_KEY=k3\n"
+        "EVOLVING_PROFILE_API_LLM_MODEL=m-api\n"
+        "EVOLVING_PROFILE_API_REFLECT_LLM_MODEL=m-reflect\n",
+        encoding="utf-8",
+    )
+    router = load_router_from_data_root(tmp_path)
+    snap = router.snapshot()
+    assert snap["scopes"]["default"] == ["settings_primary", "settings_fallback_1"]
+    assert snap["scopes"]["retain"] == ["api_primary"]
+    assert snap["scopes"]["reflect"] == ["reflect_primary", "api_primary"]
+
+    jobs = build_production_jobs(tmp_path, bank_id="test-bank")
+    assert {j.name for j in jobs} == {
+        "retention-worker", "context-worker", "guidance-worker",
+        "topic-catalog", "topic-semantics", "context-links", "events-sync",
+    }

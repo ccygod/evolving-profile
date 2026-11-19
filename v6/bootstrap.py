@@ -81,3 +81,37 @@ def render_v6_daemon_plist(
   <key>StandardErrorPath</key><string>{data}/logs/v6-daemon.error.log</string>
 </dict></plist>
 """
+
+
+def render_v6_router_plist(
+    *,
+    python_bin: str,
+    code_root: str | Path,
+    data_root: str | Path,
+    label: str = "com.evolving-profile.v6-model-router",
+) -> str:
+    layout = resolve_layout(code_root, data_root)
+    code, data = layout["code_root"], layout["data_root"]
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{label}</string>
+  <key>ProgramArguments</key><array>
+    <string>{python_bin}</string>
+    <string>-m</string>
+    <string>v6.model_router</string>
+  </array>
+  <key>WorkingDirectory</key><string>{code}</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>EP_CODE_ROOT</key><string>{code}</string>
+    <key>EP_DATA_ROOT</key><string>{data}</string>
+    <key>PYTHONPATH</key><string>{code}</string>
+    <key>HF_HUB_OFFLINE</key><string>1</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>{data}/logs/v6-model-router.log</string>
+  <key>StandardErrorPath</key><string>{data}/logs/v6-model-router.error.log</string>
+</dict></plist>
+"""
