@@ -17,8 +17,8 @@
   <g font-family="Inter,Arial,sans-serif">
     <rect x="70" y="165" width="720" height="145" rx="22" fill="#0e2850" stroke="url(#user)" stroke-width="3"/>
     <text x="105" y="210" fill="#fff" font-size="25" font-weight="700">A · 用户记忆</text>
-    <text x="105" y="244" fill="#b6d8ff" font-size="17">事实 · 经历 · 实体 · 观察</text>
-    <text x="105" y="274" fill="#b6d8ff" font-size="17">带条件和原因的偏好 · 心智模型</text>
+    <text x="105" y="244" fill="#b6d8ff" font-size="17">事实 · 经历 · 实体 · 观察 · 双时态实体状态 (entity_state)</text>
+    <text x="105" y="274" fill="#b6d8ff" font-size="17">红线禁令 / 作用域分级五维偏好 · 去重心智模型</text>
     <rect x="70" y="340" width="720" height="145" rx="22" fill="#22194f" stroke="url(#agent)" stroke-width="3"/>
     <text x="105" y="385" fill="#fff" font-size="25" font-weight="700">B · 智能体过程记忆</text>
     <text x="105" y="419" fill="#decaff" font-size="17">轨迹 · 失败事件 · 修复模式</text>
@@ -26,7 +26,7 @@
     <rect x="70" y="515" width="720" height="145" rx="22" fill="#173b3a" stroke="url(#rag)" stroke-width="3"/>
     <text x="105" y="560" fill="#fff" font-size="25" font-weight="700">C · 外部 RAG</text>
     <text x="105" y="594" fill="#c9f7d9" font-size="17">操作者指定的 PDF · DOCX · Markdown · 数据目录</text>
-    <text x="105" y="624" fill="#c9f7d9" font-size="17">词法 + 向量 → RRF → Rerank · 可选判断器</text>
+    <text x="105" y="624" fill="#c9f7d9" font-size="17">词法 + 迭代向量 → RRF → 双时态与信任重排 · 可选判断器</text>
   </g>
   <g stroke="#a7c7ff" stroke-width="4" fill="none" marker-end="url(#arrow)"><path d="M800 237 C900 237 900 340 1025 380"/><path d="M800 412 H1025"/><path d="M800 587 C900 587 900 480 1025 420"/></g>
   <g filter="url(#glow)"><rect x="1025" y="315" width="285" height="170" rx="28" fill="url(#ctx)" opacity=".96"/></g>
