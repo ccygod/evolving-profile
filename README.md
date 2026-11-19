@@ -229,7 +229,7 @@ The 6.1.0 release builds on the unified v6 architecture with full cross-platform
 - **Bi-Temporal State & Ontology Hygiene**: generalized mutable **Entity State** ledger (`v6/entity_state.py`, `ep_events.entity_state` with `valid_from`/`valid_to`/`superseded_by`), IDF-weighted **Entity Graph** (`v6/entity_graph.py`), **Bi-Temporal & Trust Reranker** (`v6/reranker.py`), automated **Ontology & Preference Governance** (`v6/ontology_hygiene.py`: active model deduplication, `enforcement` guardrails + `scope_level` isolation, unconfirmed assistant experience soft-demotion, orphan HNSW index & singleton entity cleanup), **SQLite & Release Hygiene** (`v6/sqlite_hygiene.py`), and an automated **Golden Quality Gate** (`v6/eval_harness.py`).
 - **Matched Web Console Visualization**: Preference Constellation highlights `hard_guardrail` vs `default_policy` / `soft_style` and `scope_level`, Memory Constellation dims soft-demoted entries while preserving traceability, and the Full-Chain Topology exposes **Entity State** and **Bi-temporal & Trust Rerank**.
 
-EP is developed on top of [Hindsight](https://github.com/vectorize-io/hindsight); see [NOTICE.md](NOTICE.md). Full notes: [CHANGELOG-6.0.md](CHANGELOG-6.0.md) · Architecture: [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md) · Earlier 5.1 notes: [CHANGELOG-5.1.md](CHANGELOG-5.1.md).
+EP is developed on top of [Hindsight](https://github.com/vectorize-io/hindsight); see [NOTICE.md](NOTICE.md). Full notes: [CHANGELOG-6.1.md](CHANGELOG-6.1.md) · [CHANGELOG-6.0.md](CHANGELOG-6.0.md) · Architecture: [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md) · Earlier 5.1 notes: [CHANGELOG-5.1.md](CHANGELOG-5.1.md).
 
 Product version comes from [VERSION](VERSION); channel/build metadata comes from
 the checked [release manifest](config/release-manifest.json). The current 6.1.0
@@ -238,12 +238,12 @@ documentation and code are on `main` and the [`release/6.1.0` branch](https://gi
 
 | Area | Current evidence | Still needs validation |
 | --- | --- | --- |
-| User/agent memory, five-dimensional preferences, scenario/source navigation and observable topology | Existing implementation; macOS/Codex is the main exercised integration | Whole-history accuracy, universal answer benefit and every model/task combination |
-| Host integrations management page | Implemented; real local Console clicks, Chinese/English, scroll and responsive checks | Native target-client acceptance is separate from this page |
-| Governed stdio and optional authenticated HTTP | Isolated EP-side protocol/policy tests; new profiles default to read-only | Actual client receipt/use, remote/TLS operation and every lazy tool dependency branch |
-| Claude CLI, local desktop Code and ordinary desktop Chat | Separate recipes and preparation profiles | Each actual surface's lifecycle, source capture, binding and end-to-end calls |
-| Hermes, WorkBuddy and Doubao Work | Capability profiles, discovery, previews, guidance and diagnostics prepared | Native task/session evidence; no equal-validation claim with Codex |
-| Windows native / WSL / remote | Separate modes, Unicode/UTF-8/path/lock preparation and manual CI definition | Actual Windows/PowerShell execution; WSL success is not native-Windows certification |
+| User/agent memory, five-dimensional preferences, bi-temporal `entity_state`, scenario/source navigation and observable topology | Exercised end-to-end across **Codex, Claude Desktop, Claude Code CLI, Antigravity, and Trae** on macOS (`ep_events.work_ledger` multi-host turns verified) | Whole-history accuracy, universal answer benefit and every model/task combination |
+| Host integrations management page | Implemented; real local Console clicks, Chinese/English, scroll and responsive checks | Native target-client acceptance for non-macOS clients |
+| Governed stdio and optional authenticated HTTP | EP-side protocol/policy tests + live MCP reads/captures on Codex, Claude Desktop/CLI, Antigravity, and Trae; new profiles default to read-only | Remote/TLS operation and every lazy tool dependency branch |
+| Claude Desktop, Claude Code CLI, Antigravity, Trae | Active multi-host adapters & Hook/MCP bridges feeding unified `work_ledger`, `entity_state`, and memory banks on macOS | Windows/Linux native lifecycle parity across all client versions |
+| Hermes, WorkBuddy and Doubao Work | Capability profiles, discovery, previews, guidance and diagnostics prepared | Native task/session evidence; no equal-validation claim with Codex/Claude/Antigravity |
+| Windows native / WSL / remote | Zero-shell pure-Python `v6/daemon.py` + `v6/pg_autotune.py` + native `scripts/install.ps1` / `scripts/install.py` (`uv` auto-provisions Python 3.11+) | Full end-to-end native Windows acceptance run on clean machines |
 | External RAG / JEV / local models | Existing optional modules and configuration | Operator's actual files, keys, models, index compatibility and measured benefit |
 
 “Detected”, “configured”, “EP protocol verified”, “host received” and “answer
@@ -426,16 +426,22 @@ macOS scheduler, cloud-backup boundary, upgrade and rollback steps are in
 
 ### 1. Install and build
 
+**Cross-platform (macOS / Linux / Windows PowerShell — recommended; `uv` auto-provisions Python 3.11+ even if system Python is older):**
+
 ```bash
 git clone --branch release/6.1.0 --single-branch https://github.com/gtkj/evolving-profile.git
 cd evolving-profile
-./scripts/install-ep51.sh --mode local --no-launch
+uv run --python 3.11 scripts/install.py --mode local --no-launch
 ```
 
-The installer filename is retained for backward compatibility; it reads `VERSION`.
-This command intentionally uses the current `release/6.1.0` branch so it includes the
-latest verified documentation and fixes. Before running it, confirm `VERSION` is
-`6.1.0` and record the commit shown by `git rev-parse HEAD`.
+On **Windows PowerShell**, you can also run:
+
+```powershell
+.\scripts\install.ps1 -NoLaunch
+```
+
+Legacy Bash wrapper (`./scripts/install-ep51.sh --mode local --no-launch`) remains available for macOS/Linux/WSL.
+Before running, confirm `VERSION` is `6.1.0` and record the commit shown by `git rev-parse HEAD`.
 
 This runs preflight and a release text-source scan, installs base dependencies,
 builds the SDK **before** the Console and writes a local launch manifest.
@@ -517,11 +523,11 @@ no-Hook behavior and host-specific limits. The machine-readable companion is
 
 | Host | Current position | Do not assume |
 | --- | --- | --- |
-| **Codex** | Most deeply exercised MCP/Hook, memory-route, scenario and receipt path | Every black-box answer has an adoption receipt |
-| **Claude Code CLI** | Documented stdio registration recipe **plus, since 5.1.3, a host-adaptive Hook bridge** (capture + per-prompt recall context); exercised through the real bridge with simulated host markers | A live-CLI-session acceptance run, or certification by MCP visibility |
-| **Claude Desktop — Cowork / local agent sessions** | **5.1.3: Hook plugin + bridge, desktop chats captured with `origin_agent=claude-desktop`, Scenario Summaries for desktop chats, health check** — exercised end to end on one macOS machine | Windows/Linux, other Desktop versions, or that every answer used the injected context |
-| **Claude Code desktop — Code tab (not Claude Desktop)** | Local sessions can reuse supported CLI MCP configuration; separate recipe provided | CLI listing proves this desktop/cloud/SSH session works |
-| **Claude Desktop — Chat** | Separate local MCP JSON recipe | A bundled `.mcpb` installer, Code hooks or automatic Chat history capture |
+| **Codex** | Exercised end-to-end across MCP/Hook, memory routes, scenarios, and receipts | Every black-box answer has an adoption receipt |
+| **Claude Code CLI** | Exercised with stdio MCP + host-adaptive Hook bridge + live `work_ledger` capture | Native Windows CLI acceptance |
+| **Claude Desktop — Cowork / local agent sessions** | Exercised end-to-end on macOS: Hook plugin + bridge, `origin_agent=claude-desktop`, Scenario Summaries, health check | Windows/Linux or other Desktop versions |
+| **Antigravity** | Exercised end-to-end with governed MCP + native transcript adapter (`events/adapters/antigravity.py`) + `work_ledger` turns | Native Windows path regression |
+| **Trae** | Exercised with native transcript adapter + `work_ledger` turns | Automatic Hook injection |
 | **Hermes** | Shared memory services and compatible MCP/API contracts can be reused | Identical capability probes, receipts or onboarding |
 
 ### Claude Desktop and Claude CLI (new in 5.1.3)
@@ -572,8 +578,8 @@ production-classified and full-workspace audit results and retained RC risks.
 ## Authorship, source and documentation
 
 EP distribution author/maintainer: **CCY**. The
-[personal distribution](https://github.com/ccygod/evolving-profile) and
-[upstream contribution channel](https://github.com/94Hao94/evolving-profile) are
+[primary repository](https://github.com/gtkj/evolving-profile) and
+[personal mirror](https://github.com/ccygod/evolving-profile) are
 two channels for the same release line, not unrelated implementations.
 Preserve [NOTICE](NOTICE.md) and the applicable upstream licenses. Repository
 ownership, Git commit identity and upstream acknowledgment remain distinct.
@@ -582,7 +588,7 @@ ownership, Git commit identity and upstream acknowledgment remain distinct.
 - [Local setup and rollback](docs/LOCAL-SETUP.md) · [API configuration](api/README.md)
 - [Deployment](docs/DEPLOYMENT.md) · [Host setup](docs/HOST-SETUP.md) · [Agent requests](docs/AGENT-SETUP.md)
 - [Agent operating guide](docs/AGENT-USAGE.md) · [Candidate setup](docs/CANDIDATE-SETUP.md)
-- [Changelog (v6)](CHANGELOG-6.0.md) · [Architecture (v6)](docs/ARCHITECTURE-v6.md) · [Earlier 5.1 notes](CHANGELOG-5.1.md)
+- [Changelog (6.1)](CHANGELOG-6.1.md) · [Changelog (6.0)](CHANGELOG-6.0.md) · [Architecture (v6)](docs/ARCHITECTURE-v6.md) · [Earlier 5.1 notes](CHANGELOG-5.1.md)
 - [Source-of-truth map](config/source-of-truth.json) · [Security policy](SECURITY.md)
 
 ## Built on Hindsight
