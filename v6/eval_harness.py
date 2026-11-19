@@ -97,6 +97,28 @@ def run_eval(data_root: str | Path | None = None, *, bank_id: str | None = None)
         asst_total, asst_demoted = cur.fetchone()
         report["db_metrics"]["unconfirmed_assistant_demoted_ratio"] = round(asst_demoted / asst_total, 4) if asst_total else 1.0
 
+        # Top-5 slowest SQL statements if pg_stat_statements is enabled
+        try:
+            cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'")
+            if cur.fetchone():
+                cur.execute(
+                    """
+                    SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms,
+                           round(total_exec_time::numeric, 1) AS total_ms,
+                           left(regexp_replace(query, '\\s+', ' ', 'g'), 120) AS query_preview
+                    FROM pg_stat_statements
+                    WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+                    ORDER BY total_exec_time DESC
+                    LIMIT 5
+                    """
+                )
+                report["db_metrics"]["top_slow_sql"] = [
+                    {"calls": int(r[0]), "mean_ms": float(r[1]), "total_ms": float(r[2]), "query": r[3]}
+                    for r in cur.fetchall()
+                ]
+        except Exception:
+            pass
+
     # Preference hygiene gate (guidance SQLite)
     guidance_db = root / "guidance-v1" / "guidance.sqlite3"
     pref_gate: dict[str, Any] = {"available": False}

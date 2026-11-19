@@ -73,6 +73,7 @@ def compute_pg_tuning(ram_bytes: int, cpu_count: int | None = None, *, ssd: bool
         "jit": "off",
         "autovacuum_vacuum_scale_factor": "0.05",
         "idle_in_transaction_session_timeout": "60s",
+        "shared_preload_libraries": "pg_stat_statements",
     }
 
 
@@ -144,7 +145,7 @@ def apply_pg_tuning(
         conn.close()
     return {
         "status": "applied" if not analyze_only else "analyzed",
-        "restart_required_for": ["shared_buffers"],
+        "restart_required_for": ["shared_buffers", "shared_preload_libraries"],
         "params": applied,
         "hnsw_iterative_scan": hnsw_iterative_scan,
         "analyzed": analyzed,

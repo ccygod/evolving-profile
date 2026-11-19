@@ -262,6 +262,7 @@ def test_pg_autotune_adapts_across_hardware_tiers():
         assert tier["jit"] == "off"
         assert tier["autovacuum_vacuum_scale_factor"] == "0.05"
         assert tier["idle_in_transaction_session_timeout"] == "60s"
+        assert tier["shared_preload_libraries"] == "pg_stat_statements"
 
 
 def test_entity_idf_weight_filters_stop_entities():
