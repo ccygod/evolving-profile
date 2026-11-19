@@ -168,3 +168,103 @@ def create_daemon_control_server(daemon: SchedulerDaemon, host: str = "127.0.0.1
             return
 
     return ThreadingHTTPServer((host, port), Handler)
+
+
+def _run_cmd(cmd: list[str], *, cwd: Path | None = None, timeout: int = 1800) -> dict[str, Any]:
+    import subprocess
+
+    proc = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, timeout=timeout)
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip()[-300:]
+        raise RuntimeError(f"exit_{proc.returncode}:{tail}")
+    out = (proc.stdout or "").strip()
+    last_line = out.splitlines()[-1] if out else ""
+    try:
+        parsed = json.loads(last_line)
+        if isinstance(parsed, dict):
+            return {"status": str(parsed.get("status") or "ok"), "output": parsed}
+    except Exception:
+        pass
+    return {"status": "ok", "tail": last_line[:200]}
+
+
+def build_production_jobs(data_root: str | Path, *, bank_id: str | None = None) -> list[ScheduledJob]:
+    """Build the 7 unified EP background jobs replacing individual polling LaunchAgents."""
+    import os
+
+    root = Path(data_root).expanduser()
+    py = str(root / "runtime" / "python-3.11" / "bin" / "python")
+    host_adapter = root / "runtime" / "host-adapter"
+    resolved_bank = bank_id or os.environ.get("EVOLVING_PROFILE_BANK_ID") or ""
+
+    context_cmd = [
+        py,
+        str(host_adapter / "context-incremental-worker.py"),
+        "--state-root", str(root),
+        "--session-root", str(Path.home() / ".codex" / "sessions"),
+        "--session-root", str(root / "claude-code" / "rollouts"),
+        "--process", "--max-jobs", "1", "--scan-limit", "256",
+        "--new-after", "2026-10-08T00:00:00Z",
+    ]
+    if resolved_bank:
+        context_cmd.extend(["--bank-id", resolved_bank])
+
+    return [
+        ScheduledJob("retention-worker", 30.0, lambda: _run_cmd([py, str(host_adapter / "retention_worker.py"), "--once"], timeout=120)),
+        ScheduledJob("context-worker", 60.0, lambda: _run_cmd(context_cmd, timeout=600)),
+        ScheduledJob("guidance-worker", 300.0, lambda: _run_cmd([str(root / "bin" / "evolving-profile-guidance-worker.zsh")], cwd=root / "runtime" / "guidance", timeout=600)),
+        ScheduledJob("topic-catalog", 300.0, lambda: _run_cmd([str(root / "bin" / "evolving-profile-topic-catalog.zsh")], timeout=600)),
+        ScheduledJob("topic-semantics", 600.0, lambda: _run_cmd([str(root / "bin" / "evolving-profile-topic-semantics.zsh")], timeout=900)),
+        ScheduledJob("context-links", 3600.0, lambda: _run_cmd([py, str(host_adapter / "context-bank-associations.py")], cwd=host_adapter, timeout=600)),
+        ScheduledJob("events-sync", 3600.0, lambda: _run_cmd([str(root / "bin" / "evolving-profile-events-sync.zsh")], timeout=1800)),
+    ]
+
+
+def main() -> int:
+    import argparse
+    import os
+    import signal
+
+    parser = argparse.ArgumentParser(description="EP v6 Unified Event-Driven Scheduler Daemon")
+    parser.add_argument("--data-root", default=os.environ.get("EP_DATA_ROOT") or str(Path.home() / ".evolving-profile"))
+    parser.add_argument("--bank-id", default=os.environ.get("EVOLVING_PROFILE_BANK_ID"))
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=12096)
+    parser.add_argument("--tick-seconds", type=float, default=5.0)
+    args = parser.parse_args()
+
+    root = Path(args.data_root).expanduser()
+    daemon = SchedulerDaemon(root / "state" / "v6-scheduler.sqlite3")
+    for job in build_production_jobs(root, bank_id=args.bank_id):
+        daemon.register(job)
+
+    server = create_daemon_control_server(daemon, host=args.host, port=args.port)
+    control_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    control_thread.start()
+
+    def _handle_signal(_sig, _frame):
+        daemon.stop()
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
+    print(json.dumps({"status": "started", "host": args.host, "port": args.port, "jobs": sorted(daemon._jobs)}, ensure_ascii=False), flush=True)
+    last_states: dict[str, str] = {}
+    try:
+        while not daemon._stop_event.is_set():
+            results = daemon.tick()
+            for res in results:
+                name, st = res.get("job", ""), res.get("status", "")
+                # Quiet idle: log only on error or state transition.
+                if st == "error" or st != "idle" or last_states.get(name) != st:
+                    print(json.dumps(res, ensure_ascii=False), flush=True)
+                last_states[name] = st
+            daemon._stop_event.wait(args.tick_seconds)
+    finally:
+        server.shutdown()
+        server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
