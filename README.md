@@ -182,7 +182,7 @@ verification, execution, repair and recovery. It is not a claim that Hindsight, 
 or native host memory are useless; EP makes them more useful by giving them scope and
 operational evidence.
 
-![EP 6.0.0 Unified Architecture: multi-host ingestion gate, unified Model Router (:12095), resident Scheduler Daemon (:12096), bi-temporal state and auditable retrieval](docs/assets/ep6-architecture-en.svg)
+![EP 6.1.0 Unified Architecture: multi-host ingestion gate, unified Model Router (:12095), resident zero-shell Scheduler Daemon (:12096), bi-temporal entity_state and auditable retrieval](docs/assets/ep6-architecture-en.svg)
 
 ## See the workflow
 
@@ -221,16 +221,20 @@ guarantee that every old memory is correct or every future task will improve.
 
 ## Maturity at a glance
 
-**6.0.0 is the current release; platform-specific validation boundaries remain explicit.**
+**6.1.0 is the current release; platform-specific validation boundaries remain explicit.**
 
-The 6.0.0 release introduces the unified v6 architecture: a local OpenAI-compatible **Model Router** (`v6/model_router.py`, `:12095`) with per-scope failover and circuit breaking, a resident **Scheduler Daemon** (`v6/daemon.py`, `:12096`) consolidating 7 polling jobs into one SQLite-backed control plane, an **Event-Bus Semantic Ingestion Gate & Bi-Temporal Projector** (`v6/event_projector.py`), strict **Code/Data Separation** (`v6/bootstrap.py`), Antigravity host support, `ep_exhaustive_search` (100%-coverage SQL retrieval), and automated DB/graph/receipt governance. EP is developed on top of [Hindsight](https://github.com/vectorize-io/hindsight); see [NOTICE.md](NOTICE.md).
+The 6.1.0 release builds on the unified v6 architecture with full cross-platform adaptive runtime & ontology governance:
+- **Unified Control Plane & Zero-Shell Scheduling**: local OpenAI-compatible **Model Router** (`v6/model_router.py`, `:12095`, strict failover default + circuit breaker + telemetry) and resident pure-Python **Scheduler Daemon** (`v6/daemon.py`, `:12096`) managing 13 background jobs with zero `.zsh`/shell dependency across macOS, Windows, and Linux.
+- **Cross-Platform Postgres 18 & pgvector 0.8 Auto-Tuner** (`v6/pg_autotune.py`): hardware-adaptive `shared_buffers`, `work_mem`, `maintenance_work_mem`, `effective_cache_size`, `max_wal_size`, `jit = off`, `autovacuum_vacuum_scale_factor = 0.05`, `idle_in_transaction_session_timeout = 60s`, `pg_stat_statements` slow-SQL profiling, full-DB `ANALYZE`, and automatic `pgvector >= 0.8` `hnsw.iterative_scan = relaxed_order`.
+- **Bi-Temporal State & Ontology Hygiene**: generalized mutable **Entity State** ledger (`v6/entity_state.py`, `ep_events.entity_state` with `valid_from`/`valid_to`/`superseded_by`), IDF-weighted **Entity Graph** (`v6/entity_graph.py`), **Bi-Temporal & Trust Reranker** (`v6/reranker.py`), automated **Ontology & Preference Governance** (`v6/ontology_hygiene.py`: active model deduplication, `enforcement` guardrails + `scope_level` isolation, unconfirmed assistant experience soft-demotion, orphan HNSW index & singleton entity cleanup), **SQLite & Release Hygiene** (`v6/sqlite_hygiene.py`), and an automated **Golden Quality Gate** (`v6/eval_harness.py`).
+- **Matched Web Console Visualization**: Preference Constellation highlights `hard_guardrail` vs `default_policy` / `soft_style` and `scope_level`, Memory Constellation dims soft-demoted entries while preserving traceability, and the Full-Chain Topology exposes **Entity State** and **Bi-temporal & Trust Rerank**.
 
-Full notes: [CHANGELOG-6.0.md](CHANGELOG-6.0.md) · Architecture: [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md) · Earlier 5.1 notes: [CHANGELOG-5.1.md](CHANGELOG-5.1.md).
+EP is developed on top of [Hindsight](https://github.com/vectorize-io/hindsight); see [NOTICE.md](NOTICE.md). Full notes: [CHANGELOG-6.0.md](CHANGELOG-6.0.md) · Architecture: [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md) · Earlier 5.1 notes: [CHANGELOG-5.1.md](CHANGELOG-5.1.md).
 
 Product version comes from [VERSION](VERSION); channel/build metadata comes from
-the checked [release manifest](config/release-manifest.json). The current 6.0.0
-documentation and code are on `main` and the [`release/6.0.0` branch](https://github.com/gtkj/evolving-profile/tree/release/6.0.0)
-(tag [`v6.0.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.0.0), mirrored on [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)).
+the checked [release manifest](config/release-manifest.json). The current 6.1.0
+documentation and code are on `main` and the [`release/6.1.0` branch](https://github.com/gtkj/evolving-profile/tree/release/6.1.0)
+(tag [`v6.1.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.1.0), mirrored on [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)).
 
 | Area | Current evidence | Still needs validation |
 | --- | --- | --- |
@@ -423,7 +427,7 @@ macOS scheduler, cloud-backup boundary, upgrade and rollback steps are in
 ### 1. Install and build
 
 ```bash
-git clone --branch release/6.0.0 --single-branch https://github.com/gtkj/evolving-profile.git
+git clone --branch release/6.1.0 --single-branch https://github.com/gtkj/evolving-profile.git
 cd evolving-profile
 ./scripts/install-ep51.sh --mode local --no-launch
 ```
