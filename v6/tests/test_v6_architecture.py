@@ -12,8 +12,10 @@ import pytest
 
 from v6.bootstrap import render_v6_daemon_plist, render_v6_router_plist, verify_code_data_separation
 from v6.daemon import ScheduledJob, SchedulerDaemon, build_production_jobs, create_daemon_control_server
+from v6.entity_graph import compute_entity_idf_weight
 from v6.event_projector import classify_event_for_memory, project_bi_temporal_state
 from v6.model_router import ModelRouter, ProviderEndpoint, create_router_server, load_router_from_data_root
+from v6.pg_autotune import compute_pg_tuning
 from v6.reranker import rerank_memories
 
 
@@ -198,7 +200,7 @@ def test_load_router_from_data_root_and_production_jobs(tmp_path):
     jobs = build_production_jobs(tmp_path, bank_id="test-bank")
     assert {j.name for j in jobs} == {
         "retention-worker", "context-worker", "guidance-worker",
-        "topic-catalog", "topic-semantics", "context-links", "events-sync", "incremental-sync",
+        "topic-catalog", "topic-semantics", "context-links", "events-sync", "incremental-sync", "entity-graph",
     }
 
 
@@ -246,3 +248,20 @@ def test_bi_temporal_reranker():
     ranked = rerank_memories(items, project_states={"p1": {"status": "active"}, "p2": {"status": "archived"}})
     assert ranked[0]["id"] == "2"
     assert ranked[-1]["id"] in {"1", "3"}
+
+
+def test_pg_autotune_adapts_across_hardware_tiers():
+    low = compute_pg_tuning(4 * 1024 ** 3, cpu_count=4)
+    mid = compute_pg_tuning(16 * 1024 ** 3, cpu_count=10)
+    high = compute_pg_tuning(64 * 1024 ** 3, cpu_count=24)
+    assert low["shared_buffers"] == "512MB" and low["work_mem"] == "8MB"
+    assert mid["shared_buffers"] == "2048MB" and mid["work_mem"] == "32MB" and mid["maintenance_work_mem"] == "512MB"
+    assert high["shared_buffers"] == "4096MB" and high["work_mem"] == "64MB" and high["max_parallel_workers_per_gather"] == "4"
+
+
+def test_entity_idf_weight_filters_stop_entities():
+    assert compute_entity_idf_weight(1, 10000) is None          # singleton -> no edge
+    assert compute_entity_idf_weight(2000, 10000) is None       # >8% stop-entity -> filtered
+    rare = compute_entity_idf_weight(5, 10000)
+    common = compute_entity_idf_weight(400, 10000)
+    assert rare is not None and common is not None and rare > common
