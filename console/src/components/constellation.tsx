@@ -695,14 +695,33 @@ export function Constellation({
       const baseR = nodeSizeFn ? nodeSizeFn(n.node) : 2.5 + Math.min(n.linkCount * 0.15, 2.5);
       const r = Math.max(1.5, baseR * Math.min(zoom, 2));
 
-      // Opacity varies — fewer links = dimmer, more links = brighter
-      const baseAlpha = 0.45 + Math.min(n.linkCount * 0.03, 0.5);
+      // Opacity varies — fewer links = dimmer, more links = brighter.
+      // Soft-demoted memories (unconfirmed assistant statements / short fragments)
+      // stay inspectable on hover while visually receding from the main star-field.
+      const nodeMeta = n.node.metadata as Record<string, unknown> | undefined;
+      const nestedMeta = (nodeMeta?.metadata as Record<string, unknown> | undefined) ?? undefined;
+      const isDemoted =
+        nodeMeta?.recall_demoted === true ||
+        nodeMeta?.trust_level === "assistant_unconfirmed" ||
+        nodeMeta?.fragment_noise === true ||
+        nestedMeta?.recall_demoted === true ||
+        nestedMeta?.trust_level === "assistant_unconfirmed" ||
+        nestedMeta?.fragment_noise === true;
+      const baseAlpha = isDemoted ? 0.22 : 0.45 + Math.min(n.linkCount * 0.03, 0.5);
 
       // Dot — star-like: heat-gradient color, varied size & opacity
       ctx.beginPath();
       ctx.arc(sx, sy, r, 0, Math.PI * 2);
       ctx.fillStyle = n.heatColor;
-      ctx.globalAlpha = isHovered ? 1 : isNeighbor ? 0.95 : hoverIndex >= 0 ? 0.08 : Math.max(baseAlpha, nodeOpacity ?? 0);
+      ctx.globalAlpha = isHovered
+        ? 1
+        : isNeighbor
+          ? 0.95
+          : hoverIndex >= 0
+            ? 0.08
+            : isDemoted
+              ? 0.22
+              : Math.max(baseAlpha, nodeOpacity ?? 0);
 
       if (isHovered || isNeighbor) {
         ctx.shadowColor = n.heatColor;

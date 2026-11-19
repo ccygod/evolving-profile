@@ -9,6 +9,8 @@ import {
   buildPreferenceGraph,
   preferenceDimensionColor,
   preferenceDimensionLabel,
+  preferenceEnforcementLabel,
+  preferenceScopeLabel,
   FUSION_MODEL_COLOR,
   type FusionModel,
   type PreferenceDimension,
@@ -335,6 +337,9 @@ export function PreferenceView() {
                 nodeSizeFn={(node) => {
                   if (node.id === "fusion-center") return 16;
                   if (node.metadata?.kind === "model") return 10;
+                  const unit = node.metadata?.unit as PreferenceUnit | undefined;
+                  if (unit?.enforcement === "hard_guardrail") return 7.5;
+                  if (unit?.scope === "task_local") return 3.5;
                   return 5;
                 }}
                 preserveNodeColor
@@ -413,8 +418,20 @@ export function PreferenceView() {
             {!selectedNode && <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy.detailHint}</p>}
             {selectedDetail && (
               <div className="mt-3 space-y-3 text-sm">
-                <div className="font-medium" style={{ color: preferenceDimensionColor(selectedDetail.primary_category) }}>
-                  {preferenceDimensionLabel(selectedDetail.primary_category, language)}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium" style={{ color: preferenceDimensionColor(selectedDetail.primary_category) }}>
+                    {preferenceDimensionLabel(selectedDetail.primary_category, language)}
+                  </span>
+                  {preferenceEnforcementLabel(selectedDetail.enforcement, language) ? (
+                    <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${selectedDetail.enforcement === "hard_guardrail" ? "border-rose-400 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-200" : "border-border text-muted-foreground"}`}>
+                      {preferenceEnforcementLabel(selectedDetail.enforcement, language)}
+                    </span>
+                  ) : null}
+                  {preferenceScopeLabel(selectedDetail.scope, language) ? (
+                    <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                      {preferenceScopeLabel(selectedDetail.scope, language)}
+                    </span>
+                  ) : null}
                 </div>
                 <p data-i18n-ignore="true" className="leading-6">{selectedDetail.text}</p>
                 {selectedDetail.applies_when?.length ? <p className="border-l-2 pl-3 text-xs leading-5 text-muted-foreground" style={{ borderColor: preferenceDimensionColor(selectedDetail.primary_category) }}>{copy.applies} {selectedDetail.applies_when.join("；")}</p> : null}
