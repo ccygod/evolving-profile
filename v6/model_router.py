@@ -6,6 +6,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -39,6 +40,7 @@ class ModelRouter:
         scopes: dict[str, list[ProviderEndpoint]],
         *,
         default_scope: str = "default",
+        scope_modes: dict[str, str] | None = None,
         telemetry_path: Path | None = None,
         opener: Callable[..., Any] | None = None,
         clock: Callable[[], float] = time.time,
@@ -47,12 +49,15 @@ class ModelRouter:
             raise ValueError("default_scope_providers_required")
         self.scopes = scopes
         self.default_scope = default_scope
+        # Supported modes per scope: "failover" | "parallel_race" | "round_robin"
+        self.scope_modes = dict(scope_modes or {})
         self.telemetry_path = telemetry_path
         self._opener = opener or urllib.request.urlopen
         self._clock = clock
         self._lock = threading.Lock()
         self._breakers: dict[str, BreakerState] = {}
         self._metrics: dict[str, dict[str, int]] = {}
+        self._rr_counters: dict[str, int] = {}
 
     def _breaker(self, name: str) -> BreakerState:
         return self._breakers.setdefault(name, BreakerState())
@@ -107,45 +112,73 @@ class ModelRouter:
         with self.telemetry_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    def chat_completions(self, payload: dict[str, Any], *, scope: str | None = None) -> tuple[dict[str, Any], str]:
+    def _call_one(self, ep: ProviderEndpoint, payload: dict[str, Any], scope: str) -> tuple[dict[str, Any], str]:
+        req_body = {**payload, "model": ep.model}
+        url = ep.base_url.rstrip("/") + "/chat/completions"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(req_body, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {ep.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        t0 = self._clock()
+        try:
+            with self._opener(req, timeout=ep.timeout) as resp:
+                raw = resp.read()
+            parsed = json.loads(raw)
+            latency_ms = int((self._clock() - t0) * 1000)
+            self._record_success(ep, scope, latency_ms, parsed.get("usage") or {})
+            return parsed, ep.name
+        except urllib.error.HTTPError as exc:
+            code = f"http_{exc.code}"
+            self._record_failure(ep, scope, code, int((self._clock() - t0) * 1000))
+            raise RuntimeError(f"{ep.name}:{code}") from exc
+        except Exception as exc:
+            code = type(exc).__name__
+            self._record_failure(ep, scope, code, int((self._clock() - t0) * 1000))
+            raise RuntimeError(f"{ep.name}:{code}") from exc
+
+    def chat_completions(self, payload: dict[str, Any], *, scope: str | None = None, mode: str | None = None) -> tuple[dict[str, Any], str]:
         resolved_scope = scope if scope in self.scopes else self.default_scope
-        chain = self.scopes[resolved_scope]
-        errors: list[str] = []
+        chain = list(self.scopes[resolved_scope])
+        routing_mode = mode or self.scope_modes.get(resolved_scope, "failover")
 
-        for ep in chain:
-            with self._lock:
-                allowed = self._is_available(ep)
-            if not allowed:
-                errors.append(f"{ep.name}:circuit_open")
-                continue
+        with self._lock:
+            available = [ep for ep in chain if self._is_available(ep)]
+            if routing_mode == "round_robin" and len(available) > 1:
+                idx = self._rr_counters.get(resolved_scope, 0) % len(available)
+                self._rr_counters[resolved_scope] = idx + 1
+                available = available[idx:] + available[:idx]
 
-            req_body = {**payload, "model": ep.model}
-            url = ep.base_url.rstrip("/") + "/chat/completions"
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(req_body, ensure_ascii=False).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {ep.api_key}",
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
-            t0 = self._clock()
+        if not available:
+            raise RuntimeError("all_providers_failed:" + ";".join(f"{ep.name}:circuit_open" for ep in chain))
+
+        if routing_mode == "parallel_race" and len(available) > 1:
+            errors: list[str] = []
+            pool = ThreadPoolExecutor(max_workers=len(available))
             try:
-                with self._opener(req, timeout=ep.timeout) as resp:
-                    raw = resp.read()
-                parsed = json.loads(raw)
-                latency_ms = int((self._clock() - t0) * 1000)
-                self._record_success(ep, resolved_scope, latency_ms, parsed.get("usage") or {})
-                return parsed, ep.name
-            except urllib.error.HTTPError as exc:
-                code = f"http_{exc.code}"
-                self._record_failure(ep, resolved_scope, code, int((self._clock() - t0) * 1000))
-                errors.append(f"{ep.name}:{code}")
+                futs = {pool.submit(self._call_one, ep, payload, resolved_scope): ep for ep in available}
+                pending = set(futs.keys())
+                while pending:
+                    done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                    for fut in done:
+                        try:
+                            return fut.result()
+                        except Exception as exc:
+                            errors.append(str(exc))
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
+            raise RuntimeError("all_providers_failed:" + ";".join(errors))
+
+        errors = []
+        for ep in available:
+            try:
+                return self._call_one(ep, payload, resolved_scope)
             except Exception as exc:
-                code = type(exc).__name__
-                self._record_failure(ep, resolved_scope, code, int((self._clock() - t0) * 1000))
-                errors.append(f"{ep.name}:{code}")
+                errors.append(str(exc))
 
         raise RuntimeError("all_providers_failed:" + ";".join(errors))
 
@@ -153,6 +186,7 @@ class ModelRouter:
         with self._lock:
             return {
                 "scopes": {k: [ep.name for ep in v] for k, v in self.scopes.items()},
+                "scope_modes": dict(self.scope_modes),
                 "breakers": {
                     k: {
                         "state": b.state,
@@ -178,8 +212,15 @@ def create_router_server(router: ModelRouter, host: str = "127.0.0.1", port: int
             self.wfile.write(raw)
 
         def do_GET(self) -> None:
-            if self.path == "/health":
+            if self.path in ("/health", "/metrics"):
                 self._send(200, {"status": "healthy", "router": router.snapshot()})
+            elif self.path.rstrip("/") == "/v1/models":
+                seen = []
+                for chain in router.scopes.values():
+                    for ep in chain:
+                        if ep.model not in seen:
+                            seen.append(ep.model)
+                self._send(200, {"object": "list", "data": [{"id": m, "object": "model"} for m in seen]})
             else:
                 self._send(404, {"error": "not_found"})
 
@@ -274,7 +315,15 @@ def load_router_from_data_root(data_root: str | Path) -> ModelRouter:
         "reflect": reflect_chain or api_chain or default_chain,
         "guidance": api_chain or default_chain,
     }
-    return ModelRouter(scopes, telemetry_path=root / "logs" / "v6-model-router-telemetry.jsonl")
+    scope_modes = {
+        "default": "parallel_race",
+        "context": "parallel_race",
+        "retain": "round_robin",
+        "consolidation": "round_robin",
+        "reflect": "parallel_race",
+        "guidance": "round_robin",
+    }
+    return ModelRouter(scopes, scope_modes=scope_modes, telemetry_path=root / "logs" / "v6-model-router-telemetry.jsonl")
 
 
 def main() -> int:

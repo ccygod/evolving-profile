@@ -1,4 +1,12 @@
-# Changelog — Evolving Profile 6.0.0
+# Changelog — Evolving Profile 6.x
+
+## 6.1.0 (2026-11-18)
+
+- **Parallel & Round-Robin Model Routing (`v6/model_router.py`)**: Added `parallel_race` (primary + fallback raced concurrently, first valid response wins) and `round_robin` (concurrent load distribution across healthy providers) modes, plus `/v1/models` and `/metrics` endpoints.
+- **Event-Driven File Watcher (`v6/daemon.py`)**: Added zero-dependency session-directory mtime watcher to wake `context-worker` and `retention-worker` immediately on new transcript activity, plus `incremental-sync` scheduled job (8 unified jobs total).
+- **Bi-Temporal Reranker (`v6/reranker.py`)**: Added deterministic trust-level, supersession, project-status, and time-decay reranker.
+- **Golden Eval Harness (`v6/eval_harness.py`)**: Automated live benchmark scorecard (`logs/v6-eval-latest.json`) tracking service health, O(1) `project_state` latency, write signal quality, and DB/graph size.
+- **Incremental Delta Event Sync (`v6/incremental_sync.py`)**: Cursor-based gzip JSONL delta exporter with SHA-256 manifests (`backups/incremental/`) for lightweight multi-device replication.
 
 ## 6.0.0 (2026-11-18)
 

@@ -14,6 +14,7 @@ from v6.bootstrap import render_v6_daemon_plist, render_v6_router_plist, verify_
 from v6.daemon import ScheduledJob, SchedulerDaemon, build_production_jobs, create_daemon_control_server
 from v6.event_projector import classify_event_for_memory, project_bi_temporal_state
 from v6.model_router import ModelRouter, ProviderEndpoint, create_router_server, load_router_from_data_root
+from v6.reranker import rerank_memories
 
 
 def test_model_router_failover_circuit_breaker_and_recovery(tmp_path):
@@ -197,5 +198,51 @@ def test_load_router_from_data_root_and_production_jobs(tmp_path):
     jobs = build_production_jobs(tmp_path, bank_id="test-bank")
     assert {j.name for j in jobs} == {
         "retention-worker", "context-worker", "guidance-worker",
-        "topic-catalog", "topic-semantics", "context-links", "events-sync",
+        "topic-catalog", "topic-semantics", "context-links", "events-sync", "incremental-sync",
     }
+
+
+def test_model_router_parallel_race_and_round_robin():
+    import time as _time
+
+    def race_opener(req, timeout=10):
+        if "slow.invalid" in req.full_url:
+            _time.sleep(0.15)
+            return io.BytesIO(json.dumps({"choices": [{"message": {"content": "slow"}}]}).encode())
+        return io.BytesIO(json.dumps({"choices": [{"message": {"content": "fast"}}]}).encode())
+
+    router = ModelRouter(
+        {
+            "default": [
+                ProviderEndpoint("slow", "https://slow.invalid/v1", "k1", "m1"),
+                ProviderEndpoint("fast", "https://fast.invalid/v1", "k2", "m2"),
+            ],
+            "batch": [
+                ProviderEndpoint("pA", "https://a.invalid/v1", "k1", "mA"),
+                ProviderEndpoint("pB", "https://b.invalid/v1", "k2", "mB"),
+            ],
+        },
+        scope_modes={"default": "parallel_race", "batch": "round_robin"},
+        opener=race_opener,
+    )
+    res, winner = router.chat_completions({"messages": [{"role": "user", "content": "race"}]})
+    assert winner == "fast" and res["choices"][0]["message"]["content"] == "fast"
+
+    # Round-robin alternates across healthy providers
+    _, w1 = router.chat_completions({"messages": []}, scope="batch")
+    _, w2 = router.chat_completions({"messages": []}, scope="batch")
+    assert {w1, w2} == {"pA", "pB"}
+
+
+def test_bi_temporal_reranker():
+    items = [
+        {"id": "1", "score": 0.9, "text": "Assistant statement (not user-confirmed): old report",
+         "project_key": "p1", "occurred_at": "2026-08-01T00:00:00Z"},
+        {"id": "2", "score": 0.85, "text": "用户明确决定：默认使用 EP 6.1", "trust_level": "user_explicit",
+         "project_key": "p1", "occurred_at": "2026-11-18T00:00:00Z"},
+        {"id": "3", "score": 0.95, "text": "旧配置", "superseded_by": "2",
+         "project_key": "p2", "occurred_at": "2026-11-18T00:00:00Z"},
+    ]
+    ranked = rerank_memories(items, project_states={"p1": {"status": "active"}, "p2": {"status": "archived"}})
+    assert ranked[0]["id"] == "2"
+    assert ranked[-1]["id"] in {"1", "3"}
