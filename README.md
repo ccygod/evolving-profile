@@ -182,7 +182,7 @@ verification, execution, repair and recovery. It is not a claim that Hindsight, 
 or native host memory are useless; EP makes them more useful by giving them scope and
 operational evidence.
 
-![Concept illustration: three source streams, source checks, retrieval and an auditable response workflow—not a live product screenshot](docs/assets/ep51-release-hero.png)
+![EP 6.0.0 Unified Architecture: multi-host ingestion gate, unified Model Router (:12095), resident Scheduler Daemon (:12096), bi-temporal state and auditable retrieval](docs/assets/ep6-architecture-en.svg)
 
 ## See the workflow
 
@@ -221,18 +221,16 @@ guarantee that every old memory is correct or every future task will improve.
 
 ## Maturity at a glance
 
-**5.1.5 is the current candidate release; platform-specific validation boundaries remain explicit.**
+**6.0.0 is the current release; platform-specific validation boundaries remain explicit.**
 
-The 5.1.5 release stops repeated mental-model refresh failures from burning worker retries (back-off after repeated failures), adds provider failover with a circuit breaker for summary jobs, lets the console fetch a provider's model list for selection, and tightens the coverage audit against false positives. Provider API keys are no longer returned to the browser. EP is developed on top of [Hindsight](https://github.com/vectorize-io/hindsight); see [NOTICE.md](NOTICE.md).
+The 6.0.0 release introduces the unified v6 architecture: a local OpenAI-compatible **Model Router** (`v6/model_router.py`, `:12095`) with per-scope failover and circuit breaking, a resident **Scheduler Daemon** (`v6/daemon.py`, `:12096`) consolidating 7 polling jobs into one SQLite-backed control plane, an **Event-Bus Semantic Ingestion Gate & Bi-Temporal Projector** (`v6/event_projector.py`), strict **Code/Data Separation** (`v6/bootstrap.py`), Antigravity host support, `ep_exhaustive_search` (100%-coverage SQL retrieval), and automated DB/graph/receipt governance. EP is developed on top of [Hindsight](https://github.com/vectorize-io/hindsight); see [NOTICE.md](NOTICE.md).
 
-Full notes: [CHANGELOG-5.1.md](CHANGELOG-5.1.md).
+Full notes: [CHANGELOG-6.0.md](CHANGELOG-6.0.md) · Architecture: [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md) · Earlier 5.1 notes: [CHANGELOG-5.1.md](CHANGELOG-5.1.md).
 
 Product version comes from [VERSION](VERSION); channel/build metadata comes from
-the checked [release manifest](config/release-manifest.json). The current candidate
-documentation and code are on the [`release/5.1.4` branch](https://github.com/ccygod/evolving-profile-2.2/tree/release/5.1.4).
-The immutable [`v5.1.4` tag](https://github.com/ccygod/evolving-profile-2.2/releases/tag/v5.1.4)
-is the earlier candidate baseline; a GitHub Release with downloadable assets has not
-been created. Publication and contribution status are separate.
+the checked [release manifest](config/release-manifest.json). The current 6.0.0
+documentation and code are on `main` and the [`release/6.0.0` branch](https://github.com/gtkj/evolving-profile/tree/release/6.0.0)
+(tag [`v6.0.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.0.0), mirrored on [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)).
 
 | Area | Current evidence | Still needs validation |
 | --- | --- | --- |
@@ -425,8 +423,8 @@ macOS scheduler, cloud-backup boundary, upgrade and rollback steps are in
 ### 1. Install and build
 
 ```bash
-git clone --branch release/5.1.4 --single-branch https://github.com/ccygod/evolving-profile-2.2.git
-cd evolving-profile-2.2
+git clone --branch release/6.0.0 --single-branch https://github.com/gtkj/evolving-profile.git
+cd evolving-profile
 ./scripts/install-ep51.sh --mode local --no-launch
 ```
 
@@ -497,7 +495,7 @@ your own credentials are still required.
 | **WorkBuddy** | Prepare host-specific configuration first; register only if the installed client and my authorization are present, then follow the Agent operating guide. |
 | **Doubao Work** | Review the actual plugin setup, select it for this task and follow the operating guide; do not claim a Skill guarantees every-turn execution. |
 
-Repository provenance: `https://github.com/ccygod/evolving-profile-2.2`.
+Repository provenance: `https://github.com/gtkj/evolving-profile` (mirror: `https://github.com/ccygod/evolving-profile`).
 Use the current `release/5.1.4` branch or a named verified archive; do not silently
 substitute the older `v5.1.4` tag without comparing its commit and manifest.
 **[Copy the full per-host prompts, including Hermes](docs/AGENT-SETUP.md).**
@@ -570,7 +568,7 @@ production-classified and full-workspace audit results and retained RC risks.
 ## Authorship, source and documentation
 
 EP distribution author/maintainer: **CCY**. The
-[personal distribution](https://github.com/ccygod/evolving-profile-2.2) and
+[personal distribution](https://github.com/ccygod/evolving-profile) and
 [upstream contribution channel](https://github.com/94Hao94/evolving-profile) are
 two channels for the same release line, not unrelated implementations.
 Preserve [NOTICE](NOTICE.md) and the applicable upstream licenses. Repository
