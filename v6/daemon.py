@@ -217,7 +217,26 @@ def build_production_jobs(data_root: str | Path, *, bank_id: str | None = None) 
         ScheduledJob("topic-semantics", 600.0, lambda: _run_cmd([str(root / "bin" / "evolving-profile-topic-semantics.zsh")], timeout=900)),
         ScheduledJob("context-links", 3600.0, lambda: _run_cmd([py, str(host_adapter / "context-bank-associations.py")], cwd=host_adapter, timeout=600)),
         ScheduledJob("events-sync", 3600.0, lambda: _run_cmd([str(root / "bin" / "evolving-profile-events-sync.zsh")], timeout=1800)),
+        ScheduledJob("incremental-sync", 3600.0, lambda: _run_cmd([py, "-m", "v6.incremental_sync"], timeout=300)),
     ]
+
+
+def _scan_watch_signature(paths: list[Path]) -> float:
+    latest = 0.0
+    for base in paths:
+        if not base.exists():
+            continue
+        try:
+            st = base.stat().st_mtime
+            if st > latest:
+                latest = st
+            for child in base.iterdir():
+                cst = child.stat().st_mtime
+                if cst > latest:
+                    latest = cst
+        except OSError:
+            continue
+    return latest
 
 
 def main() -> int:
@@ -238,6 +257,13 @@ def main() -> int:
     for job in build_production_jobs(root, bank_id=args.bank_id):
         daemon.register(job)
 
+    watch_dirs = [
+        Path.home() / ".codex" / "sessions",
+        root / "claude-code" / "rollouts",
+        Path.home() / ".gemini" / "antigravity" / "brain",
+    ]
+    last_watch_mtime = _scan_watch_signature(watch_dirs)
+
     server = create_daemon_control_server(daemon, host=args.host, port=args.port)
     control_thread = threading.Thread(target=server.serve_forever, daemon=True)
     control_thread.start()
@@ -252,6 +278,13 @@ def main() -> int:
     last_states: dict[str, str] = {}
     try:
         while not daemon._stop_event.is_set():
+            # Event-driven wake: when new session files appear, immediately mark context-worker due.
+            cur_mtime = _scan_watch_signature(watch_dirs)
+            if cur_mtime > last_watch_mtime:
+                last_watch_mtime = cur_mtime
+                with daemon._connect() as conn:
+                    conn.execute("UPDATE job_state SET next_due_at=0 WHERE name IN ('context-worker', 'retention-worker')")
+                    conn.commit()
             results = daemon.tick()
             for res in results:
                 name, st = res.get("job", ""), res.get("status", "")
