@@ -316,12 +316,12 @@ def load_router_from_data_root(data_root: str | Path) -> ModelRouter:
         "guidance": api_chain or default_chain,
     }
     scope_modes = {
-        "default": "parallel_race",
-        "context": "parallel_race",
-        "retain": "round_robin",
-        "consolidation": "round_robin",
-        "reflect": "parallel_race",
-        "guidance": "round_robin",
+        "default": "failover",
+        "context": "failover",
+        "retain": "failover",
+        "consolidation": "failover",
+        "reflect": "failover",
+        "guidance": "failover",
     }
     return ModelRouter(scopes, scope_modes=scope_modes, telemetry_path=root / "logs" / "v6-model-router-telemetry.jsonl")
 

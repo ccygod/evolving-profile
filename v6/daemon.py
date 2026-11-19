@@ -203,7 +203,7 @@ def build_production_jobs(data_root: str | Path, *, bank_id: str | None = None) 
         "--state-root", str(root),
         "--session-root", str(Path.home() / ".codex" / "sessions"),
         "--session-root", str(root / "claude-code" / "rollouts"),
-        "--process", "--max-jobs", "1", "--scan-limit", "256",
+        "--process", "--max-jobs", "4", "--scan-limit", "256",
         "--new-after", "2026-10-08T00:00:00Z",
     ]
     if resolved_bank:
