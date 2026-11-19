@@ -170,10 +170,12 @@ def create_daemon_control_server(daemon: SchedulerDaemon, host: str = "127.0.0.1
     return ThreadingHTTPServer((host, port), Handler)
 
 
-def _run_cmd(cmd: list[str], *, cwd: Path | None = None, timeout: int = 1800) -> dict[str, Any]:
+def _run_cmd(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None, timeout: int = 1800) -> dict[str, Any]:
+    import os
     import subprocess
 
-    proc = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, timeout=timeout)
+    full_env = {**os.environ, **env} if env else None
+    proc = subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=full_env, capture_output=True, text=True, timeout=timeout)
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout or "").strip()[-300:]
         raise RuntimeError(f"exit_{proc.returncode}:{tail}")
@@ -188,14 +190,62 @@ def _run_cmd(cmd: list[str], *, cwd: Path | None = None, timeout: int = 1800) ->
     return {"status": "ok", "tail": last_line[:200]}
 
 
+def _resolve_python(root: Path) -> str:
+    import sys
+
+    candidates = [
+        root / "runtime" / "python-3.11" / "bin" / "python",
+        root / "runtime" / "python-3.11" / "python.exe",
+        root / ".venv-test" / "bin" / "python",
+        root / ".venv-test" / "Scripts" / "python.exe",
+    ]
+    for cand in candidates:
+        if cand.exists():
+            return str(cand)
+    return sys.executable
+
+
+def _run_events_sync_py(py: str, root: Path) -> dict[str, Any]:
+    """Cross-platform pure-Python events sync (no zsh / BSD date dependency)."""
+    from datetime import datetime, timedelta, timezone
+
+    ev_dir = root / "events"
+    if not (ev_dir / "replay.py").exists():
+        return {"status": "skipped", "reason": "events_dir_missing"}
+    since = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
+    batch = "auto-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    errors: list[str] = []
+    for adapter in ("codex", "claude_native", "trae", "antigravity"):
+        try:
+            _run_cmd([py, str(ev_dir / "replay.py"), "--adapter", adapter, "--since", since, "--batch-id", f"{batch}-{adapter}"], timeout=300)
+        except Exception as exc:
+            errors.append(f"{adapter}:{exc}")
+    for script, extra in (
+        ("ledger.py", ["--since", since]),
+        ("entity_state.py", []),
+        ("summarize.py", ["--level", "session", "--since", since]),
+    ):
+        sp = ev_dir / script
+        if sp.exists():
+            try:
+                _run_cmd([py, str(sp), *extra], timeout=600)
+            except Exception as exc:
+                errors.append(f"{script}:{exc}")
+    if errors:
+        return {"status": "partial", "errors": errors[:5]}
+    return {"status": "ok", "since": since}
+
+
 def build_production_jobs(data_root: str | Path, *, bank_id: str | None = None) -> list[ScheduledJob]:
-    """Build the 7 unified EP background jobs replacing individual polling LaunchAgents."""
+    """Build unified cross-platform EP v6 background jobs (zero shell-script dependency)."""
     import os
 
     root = Path(data_root).expanduser()
-    py = str(root / "runtime" / "python-3.11" / "bin" / "python")
+    py = _resolve_python(root)
     host_adapter = root / "runtime" / "host-adapter"
+    guidance_dir = root / "runtime" / "guidance"
     resolved_bank = bank_id or os.environ.get("EVOLVING_PROFILE_BANK_ID") or ""
+    path_sep = os.pathsep
 
     context_cmd = [
         py,
@@ -209,14 +259,38 @@ def build_production_jobs(data_root: str | Path, *, bank_id: str | None = None) 
     if resolved_bank:
         context_cmd.extend(["--bank-id", resolved_bank])
 
+    guidance_env = {
+        "EVOLVING_PROFILE_STATE_ROOT": str(root),
+        "EVOLVING_PROFILE_SOURCE_API_URL": os.environ.get("EVOLVING_PROFILE_SOURCE_API_URL", "http://127.0.0.1:12088"),
+        "PYTHONPATH": str(guidance_dir),
+    }
+    catalog_env = {
+        "PYTHONPATH": f"{host_adapter}{path_sep}{guidance_dir}",
+    }
+    topic_catalog_cmd = [
+        py,
+        str(guidance_dir / "topic_catalog_worker.py"),
+        "--output", str(root / "catalog" / "topics.sqlite3"),
+        "--markdown", str(root / "catalog" / "topics"),
+        "--limit", "500",
+    ]
+    topic_semantics_cmd = [
+        py,
+        str(guidance_dir / "bank_hierarchy.py"),
+        "--catalog", str(root / "catalog" / "topics.sqlite3"),
+        "--output", str(root / "catalog" / "corpus-navigation.json"),
+    ]
+    if resolved_bank:
+        topic_semantics_cmd.extend(["--bank-id", resolved_bank])
+
     return [
         ScheduledJob("retention-worker", 30.0, lambda: _run_cmd([py, str(host_adapter / "retention_worker.py"), "--once"], timeout=120)),
         ScheduledJob("context-worker", 60.0, lambda: _run_cmd(context_cmd, timeout=600)),
-        ScheduledJob("guidance-worker", 300.0, lambda: _run_cmd([str(root / "bin" / "evolving-profile-guidance-worker.zsh")], cwd=root / "runtime" / "guidance", timeout=600)),
-        ScheduledJob("topic-catalog", 300.0, lambda: _run_cmd([str(root / "bin" / "evolving-profile-topic-catalog.zsh")], timeout=600)),
-        ScheduledJob("topic-semantics", 600.0, lambda: _run_cmd([str(root / "bin" / "evolving-profile-topic-semantics.zsh")], timeout=900)),
+        ScheduledJob("guidance-worker", 300.0, lambda: _run_cmd([py, str(guidance_dir / "guidance_worker.py")], cwd=guidance_dir, env=guidance_env, timeout=600)),
+        ScheduledJob("topic-catalog", 300.0, lambda: _run_cmd(topic_catalog_cmd, env=catalog_env, timeout=600)),
+        ScheduledJob("topic-semantics", 600.0, lambda: _run_cmd(topic_semantics_cmd, env=catalog_env, timeout=900)),
         ScheduledJob("context-links", 3600.0, lambda: _run_cmd([py, str(host_adapter / "context-bank-associations.py")], cwd=host_adapter, timeout=600)),
-        ScheduledJob("events-sync", 3600.0, lambda: _run_cmd([str(root / "bin" / "evolving-profile-events-sync.zsh")], timeout=1800)),
+        ScheduledJob("events-sync", 3600.0, lambda: _run_events_sync_py(py, root)),
         ScheduledJob("incremental-sync", 3600.0, lambda: _run_cmd([py, "-m", "v6.incremental_sync"], timeout=300)),
         ScheduledJob("entity-graph", 3600.0, lambda: _run_cmd([py, "-m", "v6.entity_graph"], timeout=600)),
         ScheduledJob("entity-state", 3600.0, lambda: _run_cmd([py, "-m", "v6.entity_state"], timeout=300)),

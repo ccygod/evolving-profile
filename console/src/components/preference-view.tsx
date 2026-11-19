@@ -339,7 +339,7 @@ export function PreferenceView() {
                   if (node.metadata?.kind === "model") return 10;
                   const unit = node.metadata?.unit as PreferenceUnit | undefined;
                   if (unit?.enforcement === "hard_guardrail") return 7.5;
-                  if (unit?.scope === "task_local") return 3.5;
+                  if (unit?.scope_level === "task_local" || unit?.scope === "task_local") return 3.5;
                   return 5;
                 }}
                 preserveNodeColor
@@ -427,9 +427,9 @@ export function PreferenceView() {
                       {preferenceEnforcementLabel(selectedDetail.enforcement, language)}
                     </span>
                   ) : null}
-                  {preferenceScopeLabel(selectedDetail.scope, language) ? (
+                  {preferenceScopeLabel(selectedDetail.scope_level ?? (typeof selectedDetail.scope === "string" ? selectedDetail.scope : undefined), language) ? (
                     <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                      {preferenceScopeLabel(selectedDetail.scope, language)}
+                      {preferenceScopeLabel(selectedDetail.scope_level ?? (typeof selectedDetail.scope === "string" ? selectedDetail.scope : undefined), language)}
                     </span>
                   ) : null}
                 </div>
