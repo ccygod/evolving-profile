@@ -1,6 +1,6 @@
-# Attribution — Evolving Profile 5.1
+# Attribution — Evolving Profile 6.1
 
-Evolving Profile 5.1 is developed on top of Hindsight:
+Evolving Profile 6.1 is developed on top of Hindsight:
 https://github.com/vectorize-io/hindsight
 
 The 5.1.4 release adds bounded AI repair, automatic AI-report routing, source-envelope recovery, and queue/job reconciliation on the same attribution and license line.

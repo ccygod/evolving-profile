@@ -717,7 +717,7 @@ export function FlowView() {
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-semibold tracking-tight">{english ? "Flow" : inlineUiText("链路")}</h1>
                 <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-300">
-                  {english ? "EP 5.1 development" : inlineUiText("EP 5.1 开发态")}
+                  {english ? "EP 6.1 runtime" : inlineUiText("EP 6.1 运行态")}
                 </span>
               </div>
               <p className="mt-0.5 text-sm text-muted-foreground">{english ? "Observable evidence path from prompt to answer" : inlineUiText("从 Prompt 到回答的可观测证据图")}</p>

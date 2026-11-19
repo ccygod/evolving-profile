@@ -211,18 +211,18 @@ README 应该表达的就是这个差异：EP 难以被一个记忆后端替代�
 - **双时态可变状态与数据本体治理**：新增通用双时态 **Entity State** 状态账本（`v6/entity_state.py`，`ep_events.entity_state`，带 `valid_from`/`valid_to`/`superseded_by`）、IDF 加权 **实体图谱**（`v6/entity_graph.py`）、**双时态与信任重排器**（`v6/reranker.py`）、自动化 **本体与偏好治理引擎**（`v6/ontology_hygiene.py`：活跃认知模型去重、偏好 `enforcement` 红线分级与 `scope_level` 作用域隔离、未确认助手经历软降权、测试 Bank 与孤儿 HNSW 索引及单次实体自动清理）、**SQLite 与旧构建治理**（`v6/sqlite_hygiene.py`）以及 **黄金质量门禁**（`v6/eval_harness.py`）。
 - **Web 控制台可视化匹配**：多维度偏好星座图与详情面板同步展示红线禁令 / 作用域分级，记忆星座图自动淡化软降权历史噪声同时保留可追溯性，全链路拓扑图补齐「实体状态」与「双时态与信任重排」节点。
 
-EP 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发，见 [NOTICE.md](NOTICE.md)。完整变更见 [CHANGELOG-6.0.md](CHANGELOG-6.0.md)，架构说明见 [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md)（历史 5.1 变更见 [CHANGELOG-5.1.md](CHANGELOG-5.1.md)）。
+EP 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发，见 [NOTICE.md](NOTICE.md)。完整变更见 [CHANGELOG-6.1.md](CHANGELOG-6.1.md) · [CHANGELOG-6.0.md](CHANGELOG-6.0.md)，架构说明见 [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md)（历史 5.1 变更见 [CHANGELOG-5.1.md](CHANGELOG-5.1.md)）。
 
 产品版本以 [VERSION](VERSION) 为唯一权威，构建信息见 [发行清单](config/release-manifest.json)。当前 6.1.0 文档与代码位于 `main` 及 [`release/6.1.0` 分支](https://github.com/gtkj/evolving-profile/tree/release/6.1.0)（标签 [`v6.1.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.1.0)，个人镜像见 [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)）。
 
 | 能力 | 当前成熟度与证据 | 仍需验证 |
 | --- | --- | --- |
-| 用户/智能体记忆、五维偏好、情景及原文导航、可观察链路 | 已有实现；macOS/Codex 是主要实际验证路线 | 全历史准确性、普遍回答收益及所有模型和任务组合 |
-| 宿主接入管理页 | 已实现；本机正式页面的中英文、点击、滚动和响应式已检查 | 页面正常不等于目标客户端实际接入通过 |
-| 受治理 stdio、可选认证 HTTP | EP 侧隔离协议及权限测试已做；新宿主档案默认只读 | 真实客户端接收/使用、远程 TLS、每个工具延迟执行分支 |
-| Claude CLI、桌面本地 Code、普通 Chat | 分入口配方与准备档案已完成 | 各入口的真实生命周期、来源捕获、绑定和端到端调用 |
-| Hermes、WorkBuddy、豆包工作 | 能力档案、识别、预览、指导和诊断已准备 | 原生任务及会话证据；不宣称与 Codex 同等验证 |
-| Windows 原生、WSL、远端 | 已分模式，准备路径/中文/UTF-8/文件锁和手动 CI | Windows、PowerShell 实际执行；WSL 通过不能冒充原生通过 |
+| 用户/智能体记忆、五维偏好、双时态 `entity_state`、情景及原文导航、可观察链路 | 已在 macOS 上完成 **Codex、Claude Desktop、Claude Code CLI、Antigravity、Trae** 5 大宿主端到端联调与真实多宿主台账写入（`ep_events.work_ledger`） | 全历史准确性、普遍回答收益及所有模型和任务组合 |
+| 宿主接入管理页 | 已实现；本机正式页面的中英文、点击、滚动和响应式已检查 | 非 macOS 目标客户端的原生交互验收 |
+| 受治理 stdio、可选认证 HTTP | EP 侧协议/权限测试 + Codex / Claude Desktop & CLI / Antigravity / Trae 真实 MCP 读取与捕获；新宿主档案默认只读 | 远程 TLS 及每个工具延迟执行分支 |
+| Claude Desktop、Claude Code CLI、Antigravity、Trae | 均已接入统一事件总线、`work_ledger`、双时态 `entity_state` 与共享记忆库（macOS 实测运行） | Windows/Linux 全客户端版本的原生生命周期对等验收 |
+| Hermes、WorkBuddy、豆包工作 | 能力档案、识别、预览、指导和诊断已准备 | 原生任务及会话证据；不宣称与 Codex/Claude/Antigravity 同等验证 |
+| Windows 原生、WSL、远端 | 已提供零 Shell 纯 Python `v6/daemon.py` + `v6/pg_autotune.py` 与原生 `scripts/install.ps1` / `scripts/install.py`（`uv` 自动拉起 Python 3.11+，不依赖系统旧 Python，无需强制 WSL） | 干净 Windows 机器上的全流程端到端回归认证 |
 | 外部 RAG、JEV、本地模型 | 已有可选模块与配置 | 你自己的文件、密钥、模型、索引兼容和实际收益 |
 
 “发现安装”“配置存在”“EP 协议通过”“宿主接收”“回答采用”不是一回事。
@@ -371,15 +371,21 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 
 ### 1. 一键安装构建
 
+**跨平台推荐（macOS / Linux / Windows PowerShell 通用；即使 Windows 系统自带旧版 Python 3.8，`uv` 也会自动托管 Python 3.11+，无需折腾 WSL）：**
+
 ```bash
 git clone --branch release/6.1.0 --single-branch https://github.com/gtkj/evolving-profile.git
 cd evolving-profile
-./scripts/install-ep51.sh --mode local --no-launch
+uv run --python 3.11 scripts/install.py --mode local --no-launch
 ```
 
-脚本文件名沿用旧版兼容命名，实际版本读取 VERSION。这里使用当前
-`release/6.1.0` 分支以包含最新文档和修复；运行前确认 `VERSION` 为 `6.1.0`，
-并记录 `git rev-parse HEAD` 的提交。也可解压命名的核验归档后进入根目录。
+**Windows PowerShell 也可直接运行：**
+
+```powershell
+.\scripts\install.ps1 -NoLaunch
+```
+
+macOS / Linux / WSL 仍保留兼容脚本 `./scripts/install-ep51.sh --mode local --no-launch`。运行前可确认 `VERSION` 为 `6.1.0` 并记录 `git rev-parse HEAD`。
 
 脚本执行预检与来源文本扫描，安装基础依赖，**先构建 SDK 再构建 Console**，
 并生成本地启动清单；只在 `.env` 不存在时创建模板。
@@ -453,11 +459,11 @@ Worker 有独立配置与就绪要求。API 的 HTTP MCP 握手不能证明宿�
 
 | 宿主 | 当前定位 | 不应直接推断 |
 | --- | --- | --- |
-| **Codex** | 当前实际验证较充分的 MCP/Hook、记忆路由、情景与回执路线 | 所有黑盒回答都提供了答案采用回执 |
-| **Claude Code CLI** | 已有明确 stdio 注册步骤；**5.1.3 起另有按宿主自适应的 Hook 桥**（捕获 + 每轮召回上下文），已用模拟宿主标记经真实桥接脚本运行 | 已做过真实 CLI 会话验收，或看到 MCP 就代表已认证 |
-| **Claude Desktop（Cowork／本地智能体会话）** | **5.1.3：Hook 插件 + 桥接，桌面对话以 `origin_agent=claude-desktop` 入库，桌面对话有情景摘要，附健康检查**——在一台 macOS 上端到端运行过 | Windows/Linux、其他 Desktop 版本，或每条回答都用到了注入的上下文 |
-| **Claude Code 桌面 Code 页（不是 Claude Desktop）** | 本地会话可复用受支持的 CLI 配置，另有专项步骤 | CLI 工具列表证明桌面/云端/SSH 也已完成 |
-| **Claude Desktop — 普通 Chat/Cowork** | 独立的本地 MCP JSON 接法 | 已有 `.mcpb` 一键包、Code Hook 或自动抓取全部聊天 |
+| **Codex** | 已完成端到端 MCP/Hook、记忆路由、情景与回执实测验证 | 所有黑盒回答都提供了答案采用回执 |
+| **Claude Code CLI** | 已完成 stdio MCP + 自适应 Hook 桥 + 真实回合入库（`ep_events.work_ledger`）验证 | Windows 原生 CLI 验收 |
+| **Claude Desktop（Cowork／本地智能体会话）** | 已完成 Hook 插件 + 桥接、桌面对话入库（`origin_agent=claude-desktop`）、情景摘要与健康检查端到端验证 | Windows/Linux 或其他 Desktop 版本 |
+| **Antigravity** | 已完成受治理 MCP 接入 + 原生会话适配器（`events/adapters/antigravity.py`）+ `work_ledger` 真实回合入库验证 | Windows 原生路径回归 |
+| **Trae** | 已完成原生会话适配器 + `work_ledger` 真实回合入库验证 | 自动 Hook 注入 |
 | **Hermes** | 可复用共享记忆服务及兼容的 MCP/API 契约 | 能力探针、回执与安装流程已经完全相同 |
 
 ### Claude Desktop 与 Claude CLI（5.1.3 新增）
@@ -502,8 +508,8 @@ Worker 有独立配置与就绪要求。API 的 HTTP MCP 握手不能证明宿�
 
 ## 作者、来源与文档
 
-EP 发行作者/维护者：**CCY**。[个人发行仓库](https://github.com/ccygod/evolving-profile)
-与[上游贡献渠道](https://github.com/94Hao94/evolving-profile)是同一条发行来源线，
+EP 发行作者/维护者：**CCY**。[主仓库](https://github.com/gtkj/evolving-profile)
+与[个人镜像仓库](https://github.com/ccygod/evolving-profile)是同一条发行来源线，
 不是两套不相干的实现。保留 [NOTICE](NOTICE.md) 与相应上游许可；
 仓库拥有者、Git 提交身份和上游致谢分别记录。
 
@@ -511,7 +517,7 @@ EP 发行作者/维护者：**CCY**。[个人发行仓库](https://github.com/cc
 - [本地安装与回退](docs/LOCAL-SETUP.md) · [API 配置](api/README.md)
 - [完整部署](docs/DEPLOYMENT-中文.md) · [分宿主接入](docs/HOST-SETUP-中文.md) · [Agent 安装话](docs/AGENT-SETUP-中文.md)
 - [Agent 日常操作](docs/AGENT-USAGE-中文.md) · [候选包安装](docs/CANDIDATE-SETUP.md)
-- [v6 更新日志](CHANGELOG-6.0.md) · [v6 架构说明](docs/ARCHITECTURE-v6.md) · [历史 5.1 更新日志](CHANGELOG-5.1.md)
+- [6.1 更新日志](CHANGELOG-6.1.md) · [6.0 更新日志](CHANGELOG-6.0.md) · [v6 架构说明](docs/ARCHITECTURE-v6.md) · [历史 5.1 更新日志](CHANGELOG-5.1.md)
 - [唯一真相源](config/source-of-truth.json) · [安全策略](SECURITY.md)
 
 ## 基于 Hindsight 开发
