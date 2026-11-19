@@ -186,7 +186,7 @@ operational evidence.
 
 ## See the workflow
 
-![Actual English EP console: calibrated shared layout with parallel user-memory, agent-memory and external-document routes](docs/assets/ep511-flow-calibrated-20261017-en.jpg)
+![EP 6.1.0 Full-Chain Workflow: serial spine, parallel User Memory (with Guardrail Preferences & Bi-Temporal Entity State), Agent Process Memory, External RAG (with Bi-Temporal & Trust Rerank), and Writeback/Governance](docs/assets/ep61-workflow-en.svg)
 
 A real console capture of an existing historical audit record, cropped to exclude
 the private Prompt list. Historical source attribution is not a natural-user benchmark. Branches are
