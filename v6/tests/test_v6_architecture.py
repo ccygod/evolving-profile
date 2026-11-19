@@ -201,7 +201,7 @@ def test_load_router_from_data_root_and_production_jobs(tmp_path):
     assert {j.name for j in jobs} == {
         "retention-worker", "context-worker", "guidance-worker",
         "topic-catalog", "topic-semantics", "context-links", "events-sync", "incremental-sync", "entity-graph",
-        "entity-state", "ontology-hygiene",
+        "entity-state", "ontology-hygiene", "sqlite-hygiene", "pg-analyze",
     }
 
 
@@ -261,6 +261,7 @@ def test_pg_autotune_adapts_across_hardware_tiers():
     for tier in (low, mid, high):
         assert tier["jit"] == "off"
         assert tier["autovacuum_vacuum_scale_factor"] == "0.05"
+        assert tier["idle_in_transaction_session_timeout"] == "60s"
 
 
 def test_entity_idf_weight_filters_stop_entities():
@@ -306,3 +307,25 @@ def test_ontology_hygiene_classification_and_dedupe(tmp_path):
     assert res["task_local_units_isolated"] == 1
     assert res["enforcement_counts"]["hard_guardrail"] == 1
     assert res["scope_counts"]["task_local"] == 1
+
+
+def test_sqlite_hygiene_prunes_only_old_delivered_captures(tmp_path):
+    import sqlite3
+    from v6.sqlite_hygiene import prune_capture_sqlite
+
+    db = tmp_path / "capture.sqlite3"
+    con = sqlite3.connect(str(db))
+    con.execute("CREATE TABLE captures (capture_order INTEGER PRIMARY KEY, status TEXT, envelope_json TEXT)")
+    for i in range(1, 11):
+        con.execute("INSERT INTO captures VALUES (?, 'delivered', ?)", (i, "x" * 1000))
+    con.execute("INSERT INTO captures VALUES (11, 'pending', 'keep-pending')")
+    con.execute("INSERT INTO captures VALUES (12, 'blocked', 'keep-blocked')")
+    con.commit()
+    con.close()
+
+    res = prune_capture_sqlite(db, keep_recent_delivered=3, dry_run=False)
+    assert res["delivered_pruned"] == 7
+    con = sqlite3.connect(str(db))
+    rows = con.execute("SELECT status, count(*) FROM captures GROUP BY status").fetchall()
+    con.close()
+    assert dict(rows) == {"delivered": 3, "pending": 1, "blocked": 1}

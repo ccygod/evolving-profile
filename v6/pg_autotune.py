@@ -72,12 +72,35 @@ def compute_pg_tuning(ram_bytes: int, cpu_count: int | None = None, *, ssd: bool
         "max_parallel_workers_per_gather": str(parallel_gather),
         "jit": "off",
         "autovacuum_vacuum_scale_factor": "0.05",
+        "idle_in_transaction_session_timeout": "60s",
     }
 
 
-def apply_pg_tuning(params: dict[str, str], *, dsn: str | None = None, user: str | None = None, port: int = 15432, dbname: str = "evolving_profile") -> dict[str, Any]:
-    """Apply parameters via portable ALTER SYSTEM SET (requires Postgres reload/restart for shared_buffers)."""
+def _pgvector_supports_iterative_scan(version: str | None) -> bool:
+    if not version:
+        return False
+    parts = []
+    for tok in str(version).split(".")[:2]:
+        try:
+            parts.append(int("".join(ch for ch in tok if ch.isdigit()) or "0"))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts) >= (0, 8)
+
+
+def apply_pg_tuning(
+    params: dict[str, str],
+    *,
+    dsn: str | None = None,
+    user: str | None = None,
+    port: int = 15432,
+    dbname: str = "evolving_profile",
+    run_analyze: bool = True,
+    analyze_only: bool = False,
+) -> dict[str, Any]:
+    """Apply parameters via portable ALTER SYSTEM SET, enable pgvector 0.8+ iterative scan, and run ANALYZE."""
     import psycopg2
+    from psycopg2 import sql
 
     if dsn:
         conn = psycopg2.connect(dsn)
@@ -88,20 +111,51 @@ def apply_pg_tuning(params: dict[str, str], *, dsn: str | None = None, user: str
         conn = psycopg2.connect(**kw)
     conn.set_session(autocommit=True)
     applied: dict[str, str] = {}
+    hnsw_iterative_scan = "unchanged"
+    analyzed = False
     try:
         with conn.cursor() as cur:
-            for k, v in params.items():
-                cur.execute(f"ALTER SYSTEM SET {k} = %s", (v,))
-                applied[k] = v
-            cur.execute("SELECT pg_reload_conf()")
+            if not analyze_only:
+                for k, v in params.items():
+                    cur.execute(f"ALTER SYSTEM SET {k} = %s", (v,))
+                    applied[k] = v
+                cur.execute("SELECT pg_reload_conf()")
+
+                # Enable pgvector 0.8+ iterative HNSW scan at DB level if available
+                try:
+                    cur.execute("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+                    row = cur.fetchone()
+                    if row and _pgvector_supports_iterative_scan(row[0]):
+                        cur.execute("SELECT current_database()")
+                        cur_db = cur.fetchone()[0]
+                        cur.execute(
+                            sql.SQL("ALTER DATABASE {} SET hnsw.iterative_scan = 'relaxed_order'").format(
+                                sql.Identifier(cur_db)
+                            )
+                        )
+                        hnsw_iterative_scan = f"relaxed_order (pgvector {row[0]})"
+                except Exception as exc:
+                    hnsw_iterative_scan = f"skipped:{type(exc).__name__}"
+
+            if run_analyze or analyze_only:
+                cur.execute("ANALYZE")
+                analyzed = True
     finally:
         conn.close()
-    return {"status": "applied", "restart_required_for": ["shared_buffers"], "params": applied}
+    return {
+        "status": "applied" if not analyze_only else "analyzed",
+        "restart_required_for": ["shared_buffers"],
+        "params": applied,
+        "hnsw_iterative_scan": hnsw_iterative_scan,
+        "analyzed": analyzed,
+    }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Apply via ALTER SYSTEM SET (default is dry-run)")
+    parser.add_argument("--analyze-only", action="store_true", help="Only run database-wide ANALYZE to refresh planner stats")
+    parser.add_argument("--no-analyze", action="store_true", help="Skip ANALYZE when applying")
     parser.add_argument("--user", default=os.environ.get("PGUSER", "evolving_profile_admin"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("PGPORT", "15432")))
     parser.add_argument("--dbname", default=os.environ.get("PGDATABASE", "evolving_profile"))
@@ -117,8 +171,14 @@ def main() -> int:
         "cpus": cpus,
         "recommended": params,
     }
-    if args.apply:
-        out["apply_result"] = apply_pg_tuning(params, dsn=args.dsn, user=args.user, port=args.port, dbname=args.dbname)
+    if args.analyze_only:
+        out["apply_result"] = apply_pg_tuning(
+            params, dsn=args.dsn, user=args.user, port=args.port, dbname=args.dbname, analyze_only=True
+        )
+    elif args.apply:
+        out["apply_result"] = apply_pg_tuning(
+            params, dsn=args.dsn, user=args.user, port=args.port, dbname=args.dbname, run_analyze=not args.no_analyze
+        )
     else:
         out["dry_run"] = True
     print(json.dumps(out, ensure_ascii=False, indent=2))
