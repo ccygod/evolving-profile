@@ -330,3 +330,31 @@ def test_sqlite_hygiene_prunes_only_old_delivered_captures(tmp_path):
     rows = con.execute("SELECT status, count(*) FROM captures GROUP BY status").fetchall()
     con.close()
     assert dict(rows) == {"delivered": 3, "pending": 1, "blocked": 1}
+
+
+def test_memory_gate_is_domain_agnostic_and_non_overfitted(tmp_path):
+    from v6.memory_gate import (
+        evaluate_l1_familiarity,
+        is_user_conditioned_prompt,
+        is_user_invariant_trivial,
+    )
+
+    # User-invariant trivial tasks -> skipped (zero noise)
+    assert is_user_invariant_trivial("123 * 456 = ?")
+    assert is_user_invariant_trivial("你好")
+    r_math = evaluate_l1_familiarity("123 * 456", data_root=tmp_path, port=1)
+    assert r_math["decision"] == "skip" and r_math["cue_text"] == ""
+
+    # User-conditioned prompts across completely unrelated domains -> triggered without domain keywords
+    for prompt in (
+        "我要给患者做一次糖尿病科普，怎么讲最容易听懂？",
+        "帮我挑一台适合出差写代码的轻薄本",
+        "周末我想带家人去杭州玩两天，怎么安排路线？",
+        "How should I structure my architecture review for leadership?",
+        "某市理工大学海洋能源学院，给我介绍他们都是干什么的，然后我要给他们教师和学生讲AI课",
+    ):
+        assert is_user_conditioned_prompt(prompt), f"missed user-conditioned: {prompt}"
+        res = evaluate_l1_familiarity(prompt, data_root=tmp_path, port=1)
+        assert res["decision"] == "recall_recommended"
+        assert "user_conditioned_task" in res["reasons"]
+        assert "<ep_l1_familiarity_cue" in res["cue_text"]
