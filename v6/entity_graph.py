@@ -93,13 +93,13 @@ def build_entity_links(
                 # Connect each unit to its K nearest temporal neighbors sharing this specific entity
                 for i, u1 in enumerate(uids):
                     for u2 in uids[i + 1 : i + 1 + max_neighbors_per_entity_unit]:
-                        to_insert.append((u1, u2, "entity", entity_id, w))
-                        to_insert.append((u2, u1, "entity", entity_id, w))
+                        to_insert.append((u1, u2, "entity", entity_id, w, resolved_bank))
+                        to_insert.append((u2, u1, "entity", entity_id, w, resolved_bank))
 
             inserted = 0
             if to_insert:
                 sql = (
-                    "INSERT INTO public.memory_links (from_unit_id, to_unit_id, link_type, entity_id, weight) "
+                    "INSERT INTO public.memory_links (from_unit_id, to_unit_id, link_type, entity_id, weight, bank_id) "
                     "VALUES %s ON CONFLICT DO NOTHING"
                 )
                 execute_values(cur, sql, to_insert, page_size=1000)
