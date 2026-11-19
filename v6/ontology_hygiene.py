@@ -59,8 +59,8 @@ def classify_preference_enforcement(payload: dict[str, Any]) -> str:
 
 
 def classify_preference_scope(payload: dict[str, Any]) -> str:
-    """Classify a preference unit into global | project_scoped | task_local."""
-    existing = str(payload.get("scope") or "").strip().lower()
+    """Classify a preference unit into global | project_scoped | task_local (stored in `scope_level`, preserving dict `scope`)."""
+    existing = str(payload.get("scope_level") or "").strip().lower()
     if existing in {"global", "project_scoped", "task_local"}:
         return existing
 
@@ -155,8 +155,8 @@ def dedupe_and_enrich_guidance(sqlite_path: str | Path, *, dry_run: bool = False
             stats["enforcement_counts"][enforcement] = stats["enforcement_counts"].get(enforcement, 0) + 1
 
             changed = False
-            if data.get("scope") != scope:
-                data["scope"] = scope
+            if data.get("scope_level") != scope:
+                data["scope_level"] = scope
                 changed = True
             if data.get("enforcement") != enforcement:
                 data["enforcement"] = enforcement

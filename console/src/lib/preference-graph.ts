@@ -14,7 +14,8 @@ export type PreferenceUnit = {
   id: string;
   primary_category: PreferenceDimension;
   text: string;
-  scope?: PreferenceScope;
+  scope?: Record<string, unknown> | PreferenceScope;
+  scope_level?: PreferenceScope;
   enforcement?: PreferenceEnforcement;
   inject_default?: boolean;
   applies_when?: string[];

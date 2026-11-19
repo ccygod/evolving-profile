@@ -79,6 +79,66 @@ def run_eval(data_root: str | Path | None = None, *, bank_id: str | None = None)
         report["db_metrics"]["memory_links_total"] = links
         report["db_metrics"]["database_size"] = db_size
 
+        # Golden quality gate metrics (EP v6.1+)
+        cur.execute("SELECT to_regclass('ep_events.entity_state') IS NOT NULL")
+        if cur.fetchone()[0]:
+            t0 = time.time()
+            cur.execute("SELECT count(*) FROM ep_events.entity_state WHERE valid_to IS NULL")
+            report["db_metrics"]["entity_state_active"] = cur.fetchone()[0]
+            report["db_metrics"]["entity_state_lookup_ms"] = int((time.time() - t0) * 1000)
+
+        cur.execute(
+            """
+            SELECT count(*) FILTER (WHERE fact_type = 'experience' AND text LIKE 'Assistant statement%%'),
+                   count(*) FILTER (WHERE fact_type = 'experience' AND text LIKE 'Assistant statement%%' AND COALESCE(metadata->>'recall_demoted', '') = 'true')
+            FROM public.memory_units
+            """
+        )
+        asst_total, asst_demoted = cur.fetchone()
+        report["db_metrics"]["unconfirmed_assistant_demoted_ratio"] = round(asst_demoted / asst_total, 4) if asst_total else 1.0
+
+    # Preference hygiene gate (guidance SQLite)
+    guidance_db = root / "guidance-v1" / "guidance.sqlite3"
+    pref_gate: dict[str, Any] = {"available": False}
+    if guidance_db.exists():
+        import sqlite3
+        from collections import Counter
+
+        con = sqlite3.connect(str(guidance_db))
+        try:
+            units = con.execute("SELECT payload_json FROM unit_revisions WHERE active = 1").fetchall()
+            models = con.execute("SELECT payload_json FROM model_revisions WHERE active = 1").fetchall()
+            enf = Counter()
+            for (pj,) in units:
+                d = json.loads(pj)
+                enf[str(d.get("enforcement") or "unset")] += 1
+            titles = Counter(str(json.loads(pj).get("title") or "").strip().lower() for (pj,) in models)
+            dup_models = sum(c - 1 for c in titles.values() if c > 1)
+            pref_gate = {
+                "available": True,
+                "active_units": len(units),
+                "hard_guardrails": enf.get("hard_guardrail", 0),
+                "active_models": len(models),
+                "duplicate_active_models": dup_models,
+            }
+        finally:
+            con.close()
+    report["preference_gate"] = pref_gate
+
+    latencies = sorted(v.get("latency_ms", 0) for v in report["services"].values() if v.get("ok"))
+    p95 = latencies[int(0.95 * (len(latencies) - 1))] if latencies else -1
+    report["quality_gate"] = {
+        "all_services_healthy": all(v.get("ok") for v in report["services"].values()),
+        "service_p95_latency_ms": p95,
+        "zero_duplicate_models": pref_gate.get("duplicate_active_models", 0) == 0,
+        "unconfirmed_demoted_ok": report["db_metrics"].get("unconfirmed_assistant_demoted_ratio", 0.0) >= 0.99,
+        "entity_state_populated": report["db_metrics"].get("entity_state_active", 0) > 0,
+    }
+    report["quality_gate"]["pass"] = all(
+        report["quality_gate"][k]
+        for k in ("all_services_healthy", "zero_duplicate_models", "unconfirmed_demoted_ok", "entity_state_populated")
+    )
+
     out_path = root / "logs" / "v6-eval-latest.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

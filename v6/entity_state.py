@@ -34,6 +34,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_entity_state_active
 CREATE INDEX IF NOT EXISTS idx_entity_state_type_status
     ON ep_events.entity_state (entity_type, status)
     WHERE valid_to IS NULL;
+
+GRANT USAGE ON SCHEMA ep_events TO PUBLIC;
+GRANT SELECT ON ep_events.entity_state TO PUBLIC;
 """
 
 
