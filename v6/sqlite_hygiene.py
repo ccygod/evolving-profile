@@ -111,6 +111,42 @@ def archive_stale_legacy_sqlite(
     return {"status": "ok", "archived": archived, "dry_run": dry_run}
 
 
+def prune_old_console_releases(
+    data_root: str | Path,
+    *,
+    keep_latest: int = 2,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Keep the newest N console-* builds under runtime/releases/ and remove older obsolete builds."""
+    root = Path(data_root).expanduser()
+    rel_dir = root / "runtime" / "releases"
+    if not rel_dir.exists():
+        return {"status": "skipped", "reason": "releases_dir_missing"}
+
+    console_dirs = sorted(
+        [p for p in rel_dir.iterdir() if p.is_dir() and p.name.startswith("console-")],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    kept = [p.name for p in console_dirs[:keep_latest]]
+    doomed = console_dirs[keep_latest:]
+    removed: list[dict[str, Any]] = []
+    for p in doomed:
+        bytes_sz = sum(f.stat().st_size for f in p.rglob("*") if f.is_file() and not f.is_symlink())
+        entry = {"name": p.name, "size_mb": round(bytes_sz / (1024 * 1024), 1), "dry_run": dry_run}
+        if not dry_run:
+            shutil.rmtree(p, ignore_errors=True)
+        removed.append(entry)
+    return {
+        "status": "ok",
+        "kept": kept,
+        "removed_count": len(removed),
+        "reclaimed_mb": round(sum(r["size_mb"] for r in removed), 1),
+        "removed": removed,
+        "dry_run": dry_run,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", default=os.environ.get("EP_DATA_ROOT", str(Path.home() / ".evolving-profile")))
@@ -129,6 +165,9 @@ def main() -> int:
         ),
         "stale_legacy_sqlite": archive_stale_legacy_sqlite(
             root, min_stale_days=args.stale_days, dry_run=dry
+        ),
+        "console_releases": prune_old_console_releases(
+            root, keep_latest=2, dry_run=dry
         ),
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))

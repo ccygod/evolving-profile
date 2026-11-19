@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 
-TEST_BANK_REGEX = r"^(hermes_tmpl_|test[_-]|load-test-|bench_)"
+TEST_BANK_REGEX = r"(^(hermes_tmpl_|test[_-]|load-test-|bench_|concurrent_|staggered_|chunk-test-|audit_)|_[0-9]{10}\.[0-9]+$)"
 
 HARD_GUARDRAIL_KEYWORDS = (
     "严禁", "禁止", "绝不", "不得", "不可", "不能擅自", "必须先", "红线", "授权边界",
@@ -352,6 +352,46 @@ def prune_singleton_entities(
         conn.close()
 
 
+def drop_orphan_hnsw_indexes(
+    *, dsn: str | None = None, user: str | None = None, port: int = 15432, dbname: str = "evolving_profile", dry_run: bool = False
+) -> dict[str, Any]:
+    """Drop partial HNSW indexes on public.memory_units whose bank_id no longer exists in public.banks."""
+    from psycopg2 import sql
+
+    conn = _connect_pg(dsn, user=user, port=port, dbname=dbname)
+    conn.set_session(autocommit=True)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT indexname
+                FROM (
+                    SELECT i.indexname,
+                           substring(i.indexdef FROM 'bank_id = ''([^'']+)''') AS bank_in_def
+                    FROM pg_indexes i
+                    WHERE i.schemaname = 'public'
+                      AND i.tablename = 'memory_units'
+                      AND i.indexdef LIKE '%%USING hnsw%%'
+                ) t
+                WHERE bank_in_def IS NOT NULL
+                  AND bank_in_def NOT IN (SELECT bank_id FROM public.banks)
+                """
+            )
+            orphans = [r[0] for r in cur.fetchall()]
+            dropped = 0
+            if not dry_run:
+                for idx_name in orphans:
+                    cur.execute(sql.SQL("DROP INDEX IF EXISTS public.{}").format(sql.Identifier(idx_name)))
+                    dropped += 1
+            return {
+                "orphan_hnsw_found": len(orphans),
+                "orphan_hnsw_dropped": dropped,
+                "dry_run": dry_run,
+            }
+    finally:
+        conn.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Apply hygiene changes (default: dry-run)")
@@ -367,6 +407,7 @@ def main() -> int:
     report = {
         "guidance": dedupe_and_enrich_guidance(args.guidance_db, dry_run=dry),
         "test_banks": clean_test_banks_and_models(dsn=args.dsn, user=args.user, port=args.port, dbname=args.dbname, dry_run=dry),
+        "orphan_hnsw": drop_orphan_hnsw_indexes(dsn=args.dsn, user=args.user, port=args.port, dbname=args.dbname, dry_run=dry),
         "memory_trust": tag_unconfirmed_experiences_and_fragments(dsn=args.dsn, user=args.user, port=args.port, dbname=args.dbname, dry_run=dry),
         "singleton_entities": prune_singleton_entities(dsn=args.dsn, user=args.user, port=args.port, dbname=args.dbname, min_age_days=args.singleton_age_days, dry_run=dry),
     }
