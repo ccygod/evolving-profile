@@ -165,7 +165,7 @@ README 应该表达的就是这个差异：EP 难以被一个记忆后端替代�
 这不是说 Hindsight、AgentMemory 或宿主原生记忆没有价值，而是 EP 给它们补上了范围
 和运行证据。
 
-![概念示意图：三路来源经过检查、检索与可审计回答流程；不是实际界面截图](docs/assets/ep51-release-hero.png)
+![EP 6.0.0 统一架构总览：多宿主接入、语义写入门控、统一 Model Router (:12095)、常驻 Scheduler Daemon (:12096) 与双时态可审计检索](docs/assets/ep6-architecture-zh.svg)
 
 ## 先看实际工作流
 
@@ -203,17 +203,11 @@ README 应该表达的就是这个差异：EP 难以被一个记忆后端替代�
 
 ## 哪些较成熟，哪些还需验证
 
-**本版为 5.1.5 候选发行版；不同平台的验证边界仍单独标注。**
+**本版为 EP 6.0.0 正式版；不同平台的验证边界仍单独标注。**
 
-5.1.5 让心智模型自动刷新连续失败后退避，避免反复耗尽 worker 重试；摘要任务增加供应商主备切换与熔断；控制台可以从供应商获取模型列表并下拉选择；情景覆盖审计减少误判。供应商 API Key 不再回传到浏览器。EP 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发，见 [NOTICE.md](NOTICE.md)。完整说明见 [CHANGELOG-5.1.md](CHANGELOG-5.1.md)。
+6.0.0 完成了 v6 统一架构升级：新增本地单点 OpenAI 兼容 **Model Router**（`v6/model_router.py`，`:12095`，6 个 Scope 主备路由 + 熔断 + 遥测）、常驻事件驱动 **Scheduler Daemon**（`v6/daemon.py`，`:12096`，统一托管原 7 个碎片化轮询作业 + SQLite 游标 + 指数退避）、**语义写入门控与双时态项目状态投影**（`v6/event_projector.py`）、**代码/数据彻底分离校验**（`v6/bootstrap.py`）；同时补齐 Antigravity 宿主支持、`ep_exhaustive_search` 全量 SQL 检索、写入去重与按宿主隔离、以及数据库/图谱/回执自动化治理。EP 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发，见 [NOTICE.md](NOTICE.md)。完整变更见 [CHANGELOG-6.0.md](CHANGELOG-6.0.md)，架构说明见 [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md)（历史 5.1 变更见 [CHANGELOG-5.1.md](CHANGELOG-5.1.md)）。
 
-5.1.4 增加了带来源指纹的 AI 自动修复链路：失败操作会被诊断、自动修复，或转换为可追踪的 AI 报告，不再设置人工审核节点；同时补上情景队列与可执行 jobs 的对账、来源信封扩容和报告态与成功发布态的分离。
-
-产品版本以 [VERSION](VERSION) 为唯一权威，候选通道和构建信息见
-[发行清单](config/release-manifest.json)。当前候选文档与代码在
-[`release/5.1.4` 分支](https://github.com/ccygod/evolving-profile-2.2/tree/release/5.1.4)。
-不可变的 [`v5.1.4` 标签](https://github.com/ccygod/evolving-profile-2.2/releases/tag/v5.1.4)
-是较早的候选基线；GitHub Release 和可下载资产尚未创建。实际发布/贡献状态见发布记录。
+产品版本以 [VERSION](VERSION) 为唯一权威，构建信息见 [发行清单](config/release-manifest.json)。当前 6.0.0 文档与代码位于 `main` 及 [`release/6.0.0` 分支](https://github.com/gtkj/evolving-profile/tree/release/6.0.0)（不可变标签 [`v6.0.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.0.0)，个人镜像见 [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)）。
 
 | 能力 | 当前成熟度与证据 | 仍需验证 |
 | --- | --- | --- |
@@ -372,8 +366,8 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 ### 1. 一键安装构建
 
 ```bash
-git clone --branch release/5.1.4 --single-branch https://github.com/ccygod/evolving-profile-2.2.git
-cd evolving-profile-2.2
+git clone --branch release/6.0.0 --single-branch https://github.com/gtkj/evolving-profile.git
+cd evolving-profile
 ./scripts/install-ep51.sh --mode local --no-launch
 ```
 
@@ -438,7 +432,7 @@ Worker 有独立配置与就绪要求。API 的 HTTP MCP 握手不能证明宿�
 | **WorkBuddy** | 先生成专用配置预览，客户端已安装且我授权后才注册，随后按Agent日常协议选工具。 |
 | **豆包工作** | 审阅实际插件配置，为当前任务启用并阅读日常协议；Skill不保证每轮自动调用。 |
 
-源码来源为 `https://github.com/ccygod/evolving-profile-2.2`；使用精确
+源码来源为 `https://github.com/gtkj/evolving-profile`（个人镜像 `https://github.com/ccygod/evolving-profile`）；使用精确
 当前 `release/5.1.4` 分支或对应命名核验归档，不能用旧远端分支替代。
 **[完整分宿主提示词（含 Hermes）直接复制](docs/AGENT-SETUP-中文.md)。**
 长版包括备份合并、绝对路径、健康检查、网页点击、工具/捕获验收、配置生效、可选项和停止回退。
@@ -502,7 +496,7 @@ Worker 有独立配置与就绪要求。API 的 HTTP MCP 握手不能证明宿�
 
 ## 作者、来源与文档
 
-EP 发行作者/维护者：**CCY**。[个人发行仓库](https://github.com/ccygod/evolving-profile-2.2)
+EP 发行作者/维护者：**CCY**。[个人发行仓库](https://github.com/ccygod/evolving-profile)
 与[上游贡献渠道](https://github.com/94Hao94/evolving-profile)是同一条发行来源线，
 不是两套不相干的实现。保留 [NOTICE](NOTICE.md) 与相应上游许可；
 仓库拥有者、Git 提交身份和上游致谢分别记录。

@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 560" width="1120" height="560" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="gBlue" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="gPurple" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="gGreen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+    <linearGradient id="gAmber" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="1120" height="560" rx="16" fill="url(#bg)"/>
+  <text x="40" y="48" fill="#f8fafc" font-size="24" font-weight="700">Evolving Profile 6.0.0 — 统一架构总览</text>
+  <text x="40" y="72" fill="#94a3b8" font-size="13">跨宿主事件总线 · 语义写入门控 · 统一模型路由与调度守护进程 · 双时态状态与全量可审计检索</text>
+
+  <!-- Layer 1: Multi-Host -->
+  <rect x="40" y="96" width="1040" height="74" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+  <rect x="40" y="96" width="6" height="74" rx="3" fill="url(#gBlue)"/>
+  <text x="64" y="122" fill="#38bdf8" font-size="13" font-weight="700">多宿主接入层（MCP + Hook + 原生日志适配器）</text>
+  <g font-size="12" fill="#e2e8f0">
+    <rect x="64" y="134" width="130" height="24" rx="6" fill="#0f172a" stroke="#38bdf8" stroke-opacity="0.5"/>
+    <text x="129" y="150" text-anchor="middle">Codex</text>
+    <rect x="206" y="134" width="170" height="24" rx="6" fill="#0f172a" stroke="#38bdf8" stroke-opacity="0.5"/>
+    <text x="291" y="150" text-anchor="middle">Claude Code / Desktop</text>
+    <rect x="388" y="134" width="130" height="24" rx="6" fill="#0f172a" stroke="#38bdf8" stroke-opacity="0.5"/>
+    <text x="453" y="150" text-anchor="middle">Antigravity</text>
+    <rect x="530" y="134" width="110" height="24" rx="6" fill="#0f172a" stroke="#38bdf8" stroke-opacity="0.5"/>
+    <text x="585" y="150" text-anchor="middle">Trae</text>
+    <rect x="652" y="134" width="175" height="24" rx="6" fill="#0f172a" stroke="#38bdf8" stroke-opacity="0.5"/>
+    <text x="739" y="150" text-anchor="middle">WorkBuddy / Hermes</text>
+    <rect x="839" y="134" width="220" height="24" rx="6" fill="#0f172a" stroke="#38bdf8" stroke-opacity="0.5"/>
+    <text x="949" y="150" text-anchor="middle">受治理 stdio / HTTP MCP</text>
+  </g>
+
+  <!-- Arrows down -->
+  <line x1="290" y1="170" x2="290" y2="200" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="820" y1="170" x2="820" y2="200" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Layer 2 Left: Event Bus & Semantic Gate -->
+  <rect x="40" y="204" width="505" height="132" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+  <rect x="40" y="204" width="6" height="132" rx="3" fill="url(#gPurple)"/>
+  <text x="64" y="230" fill="#c084fc" font-size="14" font-weight="700">语义写入门控 &amp; 标准化事件总线（v6/event_projector.py）</text>
+  <text x="64" y="254" fill="#cbd5e1" font-size="12">• 写入前去重（content_sha256）+ 严格按宿主隔离批次，杜绝跨宿主混批</text>
+  <text x="64" y="276" fill="#cbd5e1" font-size="12">• 用户规则 / 决策 / 纠正 → 高优记忆通道 + 会话时间锚点（occurred_start）</text>
+  <text x="64" y="298" fill="#cbd5e1" font-size="12">• 助手长过程汇报 / 工具调用 → 仅入工作台账（work_ledger），不污染长期记忆</text>
+  <text x="64" y="320" fill="#94a3b8" font-size="11.5">• 代码与数据分离校验（EP_CODE_ROOT ≠ EP_DATA_ROOT，零运行副本漂移）</text>
+
+  <!-- Layer 2 Right: Unified Runtime Control Plane -->
+  <rect x="575" y="204" width="505" height="132" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+  <rect x="575" y="204" width="6" height="132" rx="3" fill="url(#gAmber)"/>
+  <text x="599" y="230" fill="#fbbf24" font-size="14" font-weight="700">v6 统一运行控制面（双常驻服务替代碎片化轮询）</text>
+  <rect x="599" y="244" width="222" height="78" rx="8" fill="#0f172a" stroke="#fbbf24" stroke-opacity="0.45"/>
+  <text x="611" y="264" fill="#fde68a" font-size="12.5" font-weight="700">Model Router (:12095)</text>
+  <text x="611" y="283" fill="#cbd5e1" font-size="11">6 个 Scope 独立主备链</text>
+  <text x="611" y="299" fill="#cbd5e1" font-size="11">熔断器 + 自动探活 + 遥测</text>
+  <text x="611" y="314" fill="#94a3b8" font-size="10.5">OpenAI 兼容本地单点网关</text>
+
+  <rect x="836" y="244" width="226" height="78" rx="8" fill="#0f172a" stroke="#fbbf24" stroke-opacity="0.45"/>
+  <text x="848" y="264" fill="#fde68a" font-size="12.5" font-weight="700">Scheduler Daemon (:12096)</text>
+  <text x="848" y="283" fill="#cbd5e1" font-size="11">统一托管 7 个后台作业</text>
+  <text x="848" y="299" fill="#cbd5e1" font-size="11">SQLite 游标 + 指数退避</text>
+  <text x="848" y="314" fill="#94a3b8" font-size="10.5">/health · /jobs · /trigger</text>
+
+  <!-- Arrows down -->
+  <line x1="290" y1="336" x2="290" y2="366" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="820" y1="336" x2="820" y2="366" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Layer 3: Storage & Retrieval -->
+  <rect x="40" y="370" width="1040" height="154" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+  <rect x="40" y="370" width="6" height="154" rx="3" fill="url(#gGreen)"/>
+  <text x="64" y="396" fill="#34d399" font-size="14" font-weight="700">持久化存储、图谱治理与双通道可审计检索（Postgres 18 + Query Controller :12079）</text>
+
+  <rect x="64" y="410" width="235" height="98" rx="8" fill="#0f172a" stroke="#34d399" stroke-opacity="0.45"/>
+  <text x="78" y="432" fill="#6ee7b7" font-size="12.5" font-weight="700">记忆图谱（public）</text>
+  <text x="78" y="452" fill="#cbd5e1" font-size="11">memory_units / documents</text>
+  <text x="78" y="470" fill="#cbd5e1" font-size="11">Top-10 语义边自动裁剪</text>
+  <text x="78" y="488" fill="#94a3b8" font-size="10.5">14天审计清理 · 巩固小批次</text>
+
+  <rect x="315" y="410" width="235" height="98" rx="8" fill="#0f172a" stroke="#34d399" stroke-opacity="0.45"/>
+  <text x="329" y="432" fill="#6ee7b7" font-size="12.5" font-weight="700">工作台账 &amp; 双时态状态</text>
+  <text x="329" y="452" fill="#cbd5e1" font-size="11">ep_events.work_ledger</text>
+  <text x="329" y="470" fill="#cbd5e1" font-size="11">ep_events.project_state (O(1))</text>
+  <text x="329" y="488" fill="#94a3b8" font-size="10.5">全宿主回合 · 动作 · 产物</text>
+
+  <rect x="566" y="410" width="235" height="98" rx="8" fill="#0f172a" stroke="#34d399" stroke-opacity="0.45"/>
+  <text x="580" y="432" fill="#6ee7b7" font-size="12.5" font-weight="700">五维偏好与心智模型</text>
+  <text x="580" y="452" fill="#cbd5e1" font-size="11">前置零成本过滤未确认助手自述</text>
+  <text x="580" y="470" fill="#cbd5e1" font-size="11">支持高证据单维模型直接激活</text>
+  <text x="580" y="488" fill="#94a3b8" font-size="10.5">7天回执滚动清理</text>
+
+  <rect x="817" y="410" width="244" height="98" rx="8" fill="#0f172a" stroke="#38bdf8" stroke-opacity="0.6"/>
+  <text x="831" y="432" fill="#7dd3fc" font-size="12.5" font-weight="700">双引擎可审计检索</text>
+  <text x="831" y="452" fill="#cbd5e1" font-size="11">user_recall / user_research</text>
+  <text x="831" y="470" fill="#cbd5e1" font-size="11">ep_exhaustive_search (100% SQL)</text>
+  <text x="831" y="488" fill="#94a3b8" font-size="10.5">原文回读 read_source · 控制台 :9999</text>
+</svg>
