@@ -165,7 +165,7 @@ README 应该表达的就是这个差异：EP 难以被一个记忆后端替代�
 这不是说 Hindsight、AgentMemory 或宿主原生记忆没有价值，而是 EP 给它们补上了范围
 和运行证据。
 
-![EP 6.0.0 统一架构总览：多宿主接入、语义写入门控、统一 Model Router (:12095)、常驻 Scheduler Daemon (:12096) 与双时态可审计检索](docs/assets/ep6-architecture-zh.svg)
+![EP 6.1.0 统一架构总览：多宿主接入、语义写入门控、统一 Model Router (:12095)、跨平台零 Shell 调度器 (:12096)、双时态实体状态与可审计检索](docs/assets/ep6-architecture-zh.svg)
 
 ## 先看实际工作流
 
@@ -203,11 +203,17 @@ README 应该表达的就是这个差异：EP 难以被一个记忆后端替代�
 
 ## 哪些较成熟，哪些还需验证
 
-**本版为 EP 6.0.0 正式版；不同平台的验证边界仍单独标注。**
+**本版为 EP 6.1.0 正式版；不同平台的验证边界仍单独标注。**
 
-6.0.0 完成了 v6 统一架构升级：新增本地单点 OpenAI 兼容 **Model Router**（`v6/model_router.py`，`:12095`，6 个 Scope 主备路由 + 熔断 + 遥测）、常驻事件驱动 **Scheduler Daemon**（`v6/daemon.py`，`:12096`，统一托管原 7 个碎片化轮询作业 + SQLite 游标 + 指数退避）、**语义写入门控与双时态项目状态投影**（`v6/event_projector.py`）、**代码/数据彻底分离校验**（`v6/bootstrap.py`）；同时补齐 Antigravity 宿主支持、`ep_exhaustive_search` 全量 SQL 检索、写入去重与按宿主隔离、以及数据库/图谱/回执自动化治理。EP 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发，见 [NOTICE.md](NOTICE.md)。完整变更见 [CHANGELOG-6.0.md](CHANGELOG-6.0.md)，架构说明见 [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md)（历史 5.1 变更见 [CHANGELOG-5.1.md](CHANGELOG-5.1.md)）。
+6.1.0 在 v6 统一架构基础上完成了**跨平台自适应内核、数据本体治理与前后端全链路对齐**：
+- **统一控制面与零 Shell 调度**：本地单点 OpenAI 兼容 **Model Router**（`v6/model_router.py`，`:12095`，默认严格主备 `failover` + 熔断 + 遥测）与纯 Python 常驻事件驱动 **Scheduler Daemon**（`v6/daemon.py`，`:12096`，统一托管 13 项后台作业，零 `.zsh` 依赖，支持 macOS / Windows / Linux）。
+- **Postgres 18 & pgvector 0.8 自适应内核调优**（`v6/pg_autotune.py`）：按硬件内存与 CPU 自动计算 `shared_buffers`、`work_mem`、`maintenance_work_mem`、`effective_cache_size`、`max_wal_size`，开启 `jit = off`、`autovacuum_vacuum_scale_factor = 0.05`、`idle_in_transaction_session_timeout = 60s`、`pg_stat_statements` 慢查询剖析、全库 `ANALYZE`，并自动检测 `pgvector >= 0.8` 启用 `hnsw.iterative_scan = relaxed_order`。
+- **双时态可变状态与数据本体治理**：新增通用双时态 **Entity State** 状态账本（`v6/entity_state.py`，`ep_events.entity_state`，带 `valid_from`/`valid_to`/`superseded_by`）、IDF 加权 **实体图谱**（`v6/entity_graph.py`）、**双时态与信任重排器**（`v6/reranker.py`）、自动化 **本体与偏好治理引擎**（`v6/ontology_hygiene.py`：活跃认知模型去重、偏好 `enforcement` 红线分级与 `scope_level` 作用域隔离、未确认助手经历软降权、测试 Bank 与孤儿 HNSW 索引及单次实体自动清理）、**SQLite 与旧构建治理**（`v6/sqlite_hygiene.py`）以及 **黄金质量门禁**（`v6/eval_harness.py`）。
+- **Web 控制台可视化匹配**：多维度偏好星座图与详情面板同步展示红线禁令 / 作用域分级，记忆星座图自动淡化软降权历史噪声同时保留可追溯性，全链路拓扑图补齐「实体状态」与「双时态与信任重排」节点。
 
-产品版本以 [VERSION](VERSION) 为唯一权威，构建信息见 [发行清单](config/release-manifest.json)。当前 6.0.0 文档与代码位于 `main` 及 [`release/6.0.0` 分支](https://github.com/gtkj/evolving-profile/tree/release/6.0.0)（不可变标签 [`v6.0.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.0.0)，个人镜像见 [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)）。
+EP 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发，见 [NOTICE.md](NOTICE.md)。完整变更见 [CHANGELOG-6.0.md](CHANGELOG-6.0.md)，架构说明见 [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md)（历史 5.1 变更见 [CHANGELOG-5.1.md](CHANGELOG-5.1.md)）。
+
+产品版本以 [VERSION](VERSION) 为唯一权威，构建信息见 [发行清单](config/release-manifest.json)。当前 6.1.0 文档与代码位于 `main` 及 [`release/6.1.0` 分支](https://github.com/gtkj/evolving-profile/tree/release/6.1.0)（标签 [`v6.1.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.1.0)，个人镜像见 [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)）。
 
 | 能力 | 当前成熟度与证据 | 仍需验证 |
 | --- | --- | --- |
@@ -366,7 +372,7 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 ### 1. 一键安装构建
 
 ```bash
-git clone --branch release/6.0.0 --single-branch https://github.com/gtkj/evolving-profile.git
+git clone --branch release/6.1.0 --single-branch https://github.com/gtkj/evolving-profile.git
 cd evolving-profile
 ./scripts/install-ep51.sh --mode local --no-launch
 ```
