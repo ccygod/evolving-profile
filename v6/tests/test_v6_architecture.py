@@ -254,9 +254,12 @@ def test_pg_autotune_adapts_across_hardware_tiers():
     low = compute_pg_tuning(4 * 1024 ** 3, cpu_count=4)
     mid = compute_pg_tuning(16 * 1024 ** 3, cpu_count=10)
     high = compute_pg_tuning(64 * 1024 ** 3, cpu_count=24)
-    assert low["shared_buffers"] == "512MB" and low["work_mem"] == "8MB"
-    assert mid["shared_buffers"] == "2048MB" and mid["work_mem"] == "32MB" and mid["maintenance_work_mem"] == "512MB"
-    assert high["shared_buffers"] == "4096MB" and high["work_mem"] == "64MB" and high["max_parallel_workers_per_gather"] == "4"
+    assert low["shared_buffers"] == "512MB" and low["work_mem"] == "8MB" and low["max_wal_size"] == "1024MB"
+    assert mid["shared_buffers"] == "2048MB" and mid["work_mem"] == "32MB" and mid["maintenance_work_mem"] == "512MB" and mid["max_wal_size"] == "2048MB"
+    assert high["shared_buffers"] == "4096MB" and high["work_mem"] == "64MB" and high["max_parallel_workers_per_gather"] == "4" and high["max_wal_size"] == "4096MB"
+    for tier in (low, mid, high):
+        assert tier["jit"] == "off"
+        assert tier["autovacuum_vacuum_scale_factor"] == "0.05"
 
 
 def test_entity_idf_weight_filters_stop_entities():

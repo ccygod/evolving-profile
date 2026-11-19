@@ -59,6 +59,7 @@ def compute_pg_tuning(ram_bytes: int, cpu_count: int | None = None, *, ssd: bool
     effective_cache_mb = _clamp(ram_mb // 2, 1024, 32768)       # 50% RAM,   [1GB, 32GB]
     work_mem_mb = _clamp(ram_mb // 512, 8, 64)                  # RAM/512,   [8MB, 64MB]
     maint_work_mem_mb = _clamp(ram_mb // 32, 128, 1024)         # RAM/32,    [128MB, 1GB]
+    max_wal_size_mb = _clamp(ram_mb // 8, 1024, 4096)           # RAM/8,     [1GB, 4GB]
     parallel_gather = _clamp(cpus // 4, 1, 4)
 
     return {
@@ -66,8 +67,11 @@ def compute_pg_tuning(ram_bytes: int, cpu_count: int | None = None, *, ssd: bool
         "effective_cache_size": f"{effective_cache_mb}MB",
         "work_mem": f"{work_mem_mb}MB",
         "maintenance_work_mem": f"{maint_work_mem_mb}MB",
+        "max_wal_size": f"{max_wal_size_mb}MB",
         "random_page_cost": "1.1" if ssd else "4.0",
         "max_parallel_workers_per_gather": str(parallel_gather),
+        "jit": "off",
+        "autovacuum_vacuum_scale_factor": "0.05",
     }
 
 
