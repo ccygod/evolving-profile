@@ -1,0 +1,205 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#6366f1"/>
+    </marker>
+    <marker id="arrTeal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#0d9488"/>
+    </marker>
+    <marker id="arrPurple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrSky" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#0284c7"/>
+    </marker>
+    <marker id="arrGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#059669"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="660" rx="16" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+
+  <!-- Serial Spine -->
+  <rect x="24" y="20" width="1152" height="92" rx="12" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="42" y="42" fill="#1e40af" font-size="12.5" font-weight="700">1 · 串行主干 — Prompt 入口 → 任务契约 → 上下文组装 → Agent 执行</text>
+
+  <g font-size="12" font-weight="600" text-anchor="middle">
+    <rect x="42" y="54" width="145" height="44" rx="8" fill="#ffffff" stroke="#10b981" stroke-width="1.5"/>
+    <text x="114" y="74" fill="#065f46">Prompt 入口</text>
+    <text x="114" y="90" fill="#64748b" font-size="10" font-weight="400">收到用户请求</text>
+
+    <line x1="187" y1="76" x2="213" y2="76" stroke="#6366f1" stroke-width="1.8" marker-end="url(#arr)"/>
+
+    <rect x="215" y="54" width="160" height="44" rx="8" fill="#ffffff" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="295" y="74" fill="#1e3a8a">宿主 / Hook 绑定</text>
+    <text x="295" y="90" fill="#64748b" font-size="10" font-weight="400">MCP · Hooks · Skills</text>
+
+    <line x1="375" y1="76" x2="401" y2="76" stroke="#6366f1" stroke-width="1.8" marker-end="url(#arr)"/>
+
+    <rect x="403" y="54" width="150" height="44" rx="8" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.5"/>
+    <text x="478" y="74" fill="#5b21b6">任务契约</text>
+    <text x="478" y="90" fill="#64748b" font-size="10" font-weight="400">解析 · 规划 · 授权边界</text>
+
+    <line x1="553" y1="76" x2="585" y2="76" stroke="#6366f1" stroke-width="1.8" marker-end="url(#arr)"/>
+
+    <circle cx="612" cy="76" r="22" fill="#7c3aed"/>
+    <text x="612" y="80" fill="#ffffff" font-size="11" font-weight="700">分支</text>
+
+    <rect x="780" y="54" width="175" height="44" rx="8" fill="#ffffff" stroke="#10b981" stroke-width="1.5"/>
+    <text x="867" y="74" fill="#065f46">上下文组装</text>
+    <text x="867" y="90" fill="#64748b" font-size="10" font-weight="400">有界 · 带来源与回执</text>
+
+    <line x1="955" y1="76" x2="981" y2="76" stroke="#6366f1" stroke-width="1.8" marker-end="url(#arr)"/>
+
+    <rect x="983" y="54" width="175" height="44" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+    <text x="1070" y="74" fill="#1e3a8a">Agent 执行</text>
+    <text x="1070" y="90" fill="#64748b" font-size="10" font-weight="400">推理 · 行动 · 交付</text>
+  </g>
+
+  <!-- Fork spine left & merge spine right -->
+  <path d="M 612 98 L 612 126 L 38 126 L 38 468" fill="none" stroke="#7c3aed" stroke-width="2"/>
+  <line x1="38" y1="205" x2="62" y2="205" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrPurple)"/>
+  <line x1="38" y1="342" x2="62" y2="342" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrPurple)"/>
+  <line x1="38" y1="468" x2="62" y2="468" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrPurple)"/>
+
+  <path d="M 1142 205 L 1164 205 L 1164 126 L 867 126 L 867 102" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrPurple)"/>
+  <line x1="1142" y1="342" x2="1164" y2="342" stroke="#7c3aed" stroke-width="2"/>
+  <line x1="1142" y1="468" x2="1164" y2="468" stroke="#7c3aed" stroke-width="2"/>
+  <line x1="1164" y1="205" x2="1164" y2="468" stroke="#7c3aed" stroke-width="2"/>
+
+  <!-- Lane A: User Memory -->
+  <rect x="64" y="142" width="1078" height="126" rx="12" fill="#f0fdfa" stroke="#5eead4" stroke-width="1.5"/>
+  <text x="82" y="164" fill="#0f766e" font-size="12.5" font-weight="700">A · 用户记忆（EP 6.1.0：红线偏好置顶 · 双时态实体状态 · 迭代向量召回）</text>
+
+  <g font-size="11.5" font-weight="600" text-anchor="middle">
+    <rect x="82" y="180" width="136" height="54" rx="8" fill="#ffffff" stroke="#14b8a6" stroke-width="1.5"/>
+    <text x="150" y="203" fill="#0f766e">用户记忆</text>
+    <text x="150" y="220" fill="#64748b" font-size="10" font-weight="400">个人长期上下文</text>
+
+    <line x1="218" y1="207" x2="246" y2="207" stroke="#0d9488" stroke-width="1.5" marker-end="url(#arrTeal)"/>
+
+    <rect x="248" y="172" width="210" height="36" rx="7" fill="#ffffff" stroke="#f43f5e" stroke-width="1.5"/>
+    <text x="353" y="194" fill="#9f1239">五维偏好（红线 / 作用域）</text>
+
+    <rect x="248" y="216" width="210" height="36" rx="7" fill="#ffffff" stroke="#0d9488" stroke-width="1.5"/>
+    <text x="353" y="238" fill="#115e59">Recall 与全量 SQL 检索</text>
+
+    <line x1="458" y1="190" x2="486" y2="190" stroke="#0d9488" stroke-width="1.5" marker-end="url(#arrTeal)"/>
+    <line x1="458" y1="234" x2="486" y2="234" stroke="#0d9488" stroke-width="1.5" marker-end="url(#arrTeal)"/>
+
+    <rect x="488" y="172" width="205" height="36" rx="7" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+    <text x="590" y="194" fill="#065f46">实体状态（双时态账本）</text>
+
+    <rect x="488" y="216" width="205" height="36" rx="7" fill="#ffffff" stroke="#0d9488" stroke-width="1.5"/>
+    <text x="590" y="238" fill="#115e59">Research 与情景摘要</text>
+
+    <line x1="693" y1="190" x2="721" y2="190" stroke="#0d9488" stroke-width="1.5" marker-end="url(#arrTeal)"/>
+    <line x1="693" y1="234" x2="721" y2="234" stroke="#0d9488" stroke-width="1.5" marker-end="url(#arrTeal)"/>
+
+    <rect x="723" y="180" width="185" height="54" rx="8" fill="#ffffff" stroke="#6366f1" stroke-width="1.5"/>
+    <text x="815" y="203" fill="#3730a3">原文回读 read_source</text>
+    <text x="815" y="220" fill="#64748b" font-size="10" font-weight="400">+ 信任软降权过滤</text>
+
+    <line x1="908" y1="207" x2="936" y2="207" stroke="#0d9488" stroke-width="1.5" marker-end="url(#arrTeal)"/>
+
+    <rect x="938" y="180" width="186" height="54" rx="8" fill="#ffffff" stroke="#10b981" stroke-width="2"/>
+    <text x="1031" y="203" fill="#065f46">用户记忆包</text>
+    <text x="1031" y="220" fill="#64748b" font-size="10" font-weight="400">红线 + 实体状态 + 事实</text>
+  </g>
+
+  <!-- Lane B: Agent Process Memory -->
+  <rect x="64" y="282" width="1078" height="118" rx="12" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="82" y="304" fill="#6d28d9" font-size="12.5" font-weight="700">B · 智能体过程记忆（轨迹观测 · 失败修复 · 兼容性门控 · 过程干预）</text>
+
+  <g font-size="11.5" font-weight="600" text-anchor="middle">
+    <rect x="82" y="320" width="155" height="54" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+    <text x="159" y="343" fill="#5b21b6">观察执行轨迹</text>
+    <text x="159" y="360" fill="#64748b" font-size="10" font-weight="400">失败事件 · 修复模式</text>
+
+    <line x1="237" y1="347" x2="268" y2="347" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrPurple)"/>
+
+    <rect x="270" y="320" width="195" height="54" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+    <text x="367" y="343" fill="#5b21b6">过程经验检索</text>
+    <text x="367" y="360" fill="#64748b" font-size="10" font-weight="400">可复用策略 · 能力观测</text>
+
+    <line x1="465" y1="347" x2="496" y2="347" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrPurple)"/>
+
+    <rect x="498" y="320" width="175" height="54" rx="8" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="585" y="343" fill="#92400e">兼容性门控</text>
+    <text x="585" y="360" fill="#64748b" font-size="10" font-weight="400">迁移与再验证</text>
+
+    <line x1="673" y1="347" x2="704" y2="347" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrPurple)"/>
+
+    <rect x="706" y="320" width="202" height="54" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+    <text x="807" y="343" fill="#5b21b6">提示 · 建议</text>
+    <text x="807" y="360" fill="#64748b" font-size="10" font-weight="400">脚手架 · 防护</text>
+
+    <line x1="908" y1="347" x2="936" y2="347" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrPurple)"/>
+
+    <rect x="938" y="320" width="186" height="54" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2"/>
+    <text x="1031" y="343" fill="#5b21b6">过程记忆包</text>
+    <text x="1031" y="360" fill="#64748b" font-size="10" font-weight="400">结构化执行指导</text>
+  </g>
+
+  <!-- Lane C: External RAG -->
+  <rect x="64" y="414" width="1078" height="106" rx="12" fill="#f0f9ff" stroke="#7dd3fc" stroke-width="1.5"/>
+  <text x="82" y="436" fill="#0369a1" font-size="12.5" font-weight="700">C · 外部 RAG 与检索重排（词法 + 迭代向量 → RRF 融合 → 双时态与信任重排）</text>
+
+  <g font-size="11.5" font-weight="600" text-anchor="middle">
+    <rect x="82" y="452" width="175" height="48" rx="8" fill="#ffffff" stroke="#0284c7" stroke-width="1.5"/>
+    <text x="169" y="473" fill="#0369a1">词法 + 迭代向量检索</text>
+    <text x="169" y="489" fill="#64748b" font-size="10" font-weight="400">pgvector 0.8 relaxed_order</text>
+
+    <line x1="257" y1="476" x2="288" y2="476" stroke="#0284c7" stroke-width="1.5" marker-end="url(#arrSky)"/>
+
+    <rect x="290" y="452" width="150" height="48" rx="8" fill="#ffffff" stroke="#a855f7" stroke-width="1.5"/>
+    <text x="365" y="473" fill="#6b21a8">RRF 多路融合</text>
+    <text x="365" y="489" fill="#64748b" font-size="10" font-weight="400">多通道去重归并</text>
+
+    <line x1="440" y1="476" x2="471" y2="476" stroke="#0284c7" stroke-width="1.5" marker-end="url(#arrSky)"/>
+
+    <rect x="473" y="452" width="225" height="48" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+    <text x="585" y="473" fill="#1d4ed8">双时态与信任重排</text>
+    <text x="585" y="489" fill="#64748b" font-size="10" font-weight="400">v6/reranker.py · &lt;2ms</text>
+
+    <line x1="698" y1="476" x2="729" y2="476" stroke="#0284c7" stroke-width="1.5" marker-end="url(#arrSky)"/>
+
+    <rect x="731" y="452" width="177" height="48" rx="8" fill="#ffffff" stroke="#0284c7" stroke-width="1.5"/>
+    <text x="819" y="473" fill="#0369a1">可选 JEV 审查</text>
+    <text x="819" y="489" fill="#64748b" font-size="10" font-weight="400">证据核验</text>
+
+    <line x1="908" y1="476" x2="936" y2="476" stroke="#0284c7" stroke-width="1.5" marker-end="url(#arrSky)"/>
+
+    <rect x="938" y="452" width="186" height="48" rx="8" fill="#ffffff" stroke="#0284c7" stroke-width="2"/>
+    <text x="1031" y="473" fill="#0369a1">RAG 知识包</text>
+    <text x="1031" y="489" fill="#64748b" font-size="10" font-weight="400">有依据的外部知识</text>
+  </g>
+
+  <!-- Layer 3: Writeback & Hygiene -->
+  <rect x="24" y="540" width="1152" height="98" rx="12" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1.5"/>
+  <text x="42" y="562" fill="#065f46" font-size="12.5" font-weight="700">3 · 串行写回与持续治理 — 零 Shell 调度器 (:12096) 与黄金质量门禁</text>
+
+  <g font-size="12" font-weight="600" text-anchor="middle">
+    <rect x="42" y="574" width="245" height="48" rx="8" fill="#ffffff" stroke="#10b981" stroke-width="1.5"/>
+    <text x="164" y="595" fill="#065f46">事实与实体状态写回</text>
+    <text x="164" y="611" fill="#64748b" font-size="10" font-weight="400">内容去重 · 双时态状态 · 宿主隔离</text>
+
+    <line x1="287" y1="598" x2="321" y2="598" stroke="#059669" stroke-width="1.8" marker-end="url(#arrGreen)"/>
+
+    <rect x="323" y="574" width="245" height="48" rx="8" fill="#ffffff" stroke="#10b981" stroke-width="1.5"/>
+    <text x="445" y="595" fill="#065f46">本体与数据库自动治理</text>
+    <text x="445" y="611" fill="#64748b" font-size="10" font-weight="400">孤儿 HNSW · 孤立实体 · SQLite 瘦身</text>
+
+    <line x1="568" y1="598" x2="602" y2="598" stroke="#059669" stroke-width="1.8" marker-end="url(#arrGreen)"/>
+
+    <rect x="604" y="574" width="245" height="48" rx="8" fill="#ffffff" stroke="#10b981" stroke-width="1.5"/>
+    <text x="726" y="595" fill="#065f46">审计回执与黄金门禁</text>
+    <text x="726" y="611" fill="#64748b" font-size="10" font-weight="400">轨迹引用 · pg_stat_statements</text>
+
+    <line x1="849" y1="598" x2="883" y2="598" stroke="#059669" stroke-width="1.8" marker-end="url(#arrGreen)"/>
+
+    <rect x="885" y="574" width="273" height="48" rx="8" fill="#065f46"/>
+    <text x="1021" y="595" fill="#ffffff">最终回答与控制台 (:9999)</text>
+    <text x="1021" y="611" fill="#a7f3d0" font-size="10" font-weight="400">红线/降噪星座图 · 全链路拓扑</text>
+  </g>
+</svg>
