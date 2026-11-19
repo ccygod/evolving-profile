@@ -7,11 +7,16 @@ export type PreferenceDimension =
   | "collaboration"
   | "delivery";
 export type PreferenceLocale = "zh" | "en";
+export type PreferenceScope = "global" | "project_scoped" | "task_local";
+export type PreferenceEnforcement = "hard_guardrail" | "default_policy" | "soft_style";
 
 export type PreferenceUnit = {
   id: string;
   primary_category: PreferenceDimension;
   text: string;
+  scope?: PreferenceScope;
+  enforcement?: PreferenceEnforcement;
+  inject_default?: boolean;
   applies_when?: string[];
   exceptions?: string[];
   effect_on_action?: string;
@@ -79,6 +84,46 @@ export function preferenceDimensionLabel(dimension: PreferenceDimension, locale:
 
 export function preferenceDimensionColor(dimension: PreferenceDimension): string {
   return COLORS[dimension];
+}
+
+export function preferenceEnforcementLabel(
+  enforcement?: PreferenceEnforcement | string,
+  locale: PreferenceLocale = "zh"
+): string | null {
+  if (!enforcement) return null;
+  const map: Record<PreferenceLocale, Record<string, string>> = {
+    zh: {
+      hard_guardrail: "红线禁令",
+      default_policy: "默认策略",
+      soft_style: "表达风格",
+    },
+    en: {
+      hard_guardrail: "Guardrail",
+      default_policy: "Default policy",
+      soft_style: "Soft style",
+    },
+  };
+  return map[locale][enforcement] ?? null;
+}
+
+export function preferenceScopeLabel(
+  scope?: PreferenceScope | string,
+  locale: PreferenceLocale = "zh"
+): string | null {
+  if (!scope) return null;
+  const map: Record<PreferenceLocale, Record<string, string>> = {
+    zh: {
+      global: "全局",
+      project_scoped: "项目/场景级",
+      task_local: "单次隔离",
+    },
+    en: {
+      global: "Global",
+      project_scoped: "Project-scoped",
+      task_local: "Task-local",
+    },
+  };
+  return map[locale][scope] ?? null;
 }
 
 export function buildPreferenceGraph(

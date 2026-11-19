@@ -201,6 +201,7 @@ def test_load_router_from_data_root_and_production_jobs(tmp_path):
     assert {j.name for j in jobs} == {
         "retention-worker", "context-worker", "guidance-worker",
         "topic-catalog", "topic-semantics", "context-links", "events-sync", "incremental-sync", "entity-graph",
+        "entity-state", "ontology-hygiene",
     }
 
 
@@ -268,3 +269,40 @@ def test_entity_idf_weight_filters_stop_entities():
     rare = compute_entity_idf_weight(5, 10000)
     common = compute_entity_idf_weight(400, 10000)
     assert rare is not None and common is not None and rare > common
+
+
+def test_ontology_hygiene_classification_and_dedupe(tmp_path):
+    import sqlite3
+    from v6.ontology_hygiene import (
+        classify_preference_enforcement,
+        classify_preference_scope,
+        dedupe_and_enrich_guidance,
+    )
+
+    assert classify_preference_enforcement({"text": "严禁泄露密钥", "nature": "explicit_requirement"}) == "hard_guardrail"
+    assert classify_preference_enforcement({"text": "分析问题时按推荐度排序", "nature": "explicit_requirement", "primary_category": "reasoning"}) == "default_policy"
+    assert classify_preference_enforcement({"text": "回复简洁", "nature": "inferred_pattern", "primary_category": "communication"}) == "soft_style"
+    assert classify_preference_scope({"text": "本次临时脚本", "nature": "task_local"}) == "task_local"
+    assert classify_preference_scope({"text": "PPT视觉检查规则", "nature": "explicit_requirement"}) == "project_scoped"
+    assert classify_preference_scope({"text": "给出可决策建议", "nature": "declared_preference"}) == "global"
+
+    db = tmp_path / "guidance.sqlite3"
+    con = sqlite3.connect(str(db))
+    con.execute("CREATE TABLE model_revisions (model_id TEXT, revision INT, payload_json TEXT, active INT, created_at TEXT)")
+    con.execute("CREATE TABLE unit_revisions (unit_id TEXT, revision INT, payload_json TEXT, active INT)")
+    con.execute("CREATE TABLE unit_audits (unit_id TEXT, state TEXT)")
+    con.execute("INSERT INTO model_revisions VALUES ('m1', 1, '{\"title\":\"Dup Model\"}', 1, '2026-09-01')")
+    con.execute("INSERT INTO model_revisions VALUES ('m2', 1, '{\"title\":\"Dup Model\"}', 1, '2026-11-01')")
+    con.execute("INSERT INTO unit_revisions VALUES ('u1', 1, '{\"text\":\"旧规则\",\"nature\":\"explicit_requirement\"}', 1)")
+    con.execute("INSERT INTO unit_audits VALUES ('u1', 'superseded')")
+    con.execute("INSERT INTO unit_revisions VALUES ('u2', 1, '{\"text\":\"严禁删除生产\",\"nature\":\"explicit_requirement\"}', 1)")
+    con.execute("INSERT INTO unit_revisions VALUES ('u3', 1, '{\"text\":\"一次性任务\",\"nature\":\"task_local\"}', 1)")
+    con.commit()
+    con.close()
+
+    res = dedupe_and_enrich_guidance(db, dry_run=False)
+    assert res["duplicate_models_deactivated"] == 1
+    assert res["superseded_units_deactivated"] == 1
+    assert res["task_local_units_isolated"] == 1
+    assert res["enforcement_counts"]["hard_guardrail"] == 1
+    assert res["scope_counts"]["task_local"] == 1

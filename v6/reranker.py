@@ -33,13 +33,23 @@ def rerank_memories(
         multiplier = 1.0
         reasons: list[str] = []
 
-        # 1. Trust-level adjustment: down-rank unconfirmed assistant statements
-        if text.startswith(("Assistant statement (not user-confirmed)", "【助手·未确认", "Source repetition")):
+        # 1. Trust-level adjustment: down-rank unconfirmed assistant statements & demoted fragments
+        meta = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        trust = item.get("trust_level") or meta.get("trust_level")
+        if (
+            trust == "assistant_unconfirmed"
+            or meta.get("recall_demoted") is True
+            or text.startswith(("Assistant statement (not user-confirmed)", "【助手·未确认", "Source repetition"))
+        ):
             multiplier *= 0.45
             reasons.append("unconfirmed_assistant_downrank")
-        elif item.get("trust_level") == "user_explicit":
+        elif trust == "user_explicit":
             multiplier *= 1.15
             reasons.append("user_explicit_boost")
+
+        if meta.get("fragment_noise") is True:
+            multiplier *= 0.50
+            reasons.append("fragment_noise_downrank")
 
         # 2. Bi-temporal supersession penalty
         if item.get("superseded_by") or item.get("valid_to"):
