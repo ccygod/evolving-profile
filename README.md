@@ -395,15 +395,15 @@ statuses are not erased merely to make a dashboard green.
 **Installing this candidate?** Start with [candidate setup](docs/CANDIDATE-SETUP.md).
 **Agent reading this repository:** installation alone is not usage; read
 [the Agent operating guide](docs/AGENT-USAGE.md) before choosing memory tools.
-This checkout is the 5.1.4 candidate line. The product version is read from
-[VERSION](VERSION), and the current documentation branch is `release/5.1.4`;
-the older immutable `v5.1.4` tag is not the source for this documentation build.
+This checkout is the **6.1.0** release line. The product version is read from
+[VERSION](VERSION), and the current documentation branch is `release/6.1.0`
+(mirrored on `main`); older `v5.1.x` tags are historical archives only.
 
 ### First-run acceptance path
 
 For a complete local run, treat these as separate gates:
 
-1. **Build:** run the installer and confirm it reports `EP 5.1.4` from `VERSION`.
+1. **Build:** run the installer and confirm it reports `EP 6.1.0` from `VERSION`.
 2. **API:** start port `8888` and require `curl --fail http://127.0.0.1:8888/health`.
 3. **Controller:** start port `12079` and require `curl --fail http://127.0.0.1:12079/v1/status`.
 4. **Console:** start port `9999`, open the selected language route, create or select your own Bank, and click through the health/configuration pages.
@@ -432,10 +432,10 @@ cd evolving-profile
 ./scripts/install-ep51.sh --mode local --no-launch
 ```
 
-The installer filename is retained for the 5.1 release line; it reads `VERSION`.
-This command intentionally uses the current candidate branch so it includes the
+The installer filename is retained for backward compatibility; it reads `VERSION`.
+This command intentionally uses the current `release/6.1.0` branch so it includes the
 latest verified documentation and fixes. Before running it, confirm `VERSION` is
-`5.1.4` and record the commit shown by `git rev-parse HEAD`.
+`6.1.0` and record the commit shown by `git rev-parse HEAD`.
 
 This runs preflight and a release text-source scan, installs base dependencies,
 builds the SDK **before** the Console and writes a local launch manifest.
@@ -500,8 +500,8 @@ your own credentials are still required.
 | **Doubao Work** | Review the actual plugin setup, select it for this task and follow the operating guide; do not claim a Skill guarantees every-turn execution. |
 
 Repository provenance: `https://github.com/gtkj/evolving-profile` (mirror: `https://github.com/ccygod/evolving-profile`).
-Use the current `release/5.1.4` branch or a named verified archive; do not silently
-substitute the older `v5.1.4` tag without comparing its commit and manifest.
+Use `main` or the current `release/6.1.0` branch (or a named verified archive); do not silently
+substitute older `v5.1.x` tags without comparing their commit and manifest.
 **[Copy the full per-host prompts, including Hermes](docs/AGENT-SETUP.md).**
 They specify backup/merge, absolute paths, real health/UI/tool/capture acceptance,
 effective configuration, optional features and safe stopping/rollback.
@@ -582,7 +582,7 @@ ownership, Git commit identity and upstream acknowledgment remain distinct.
 - [Local setup and rollback](docs/LOCAL-SETUP.md) · [API configuration](api/README.md)
 - [Deployment](docs/DEPLOYMENT.md) · [Host setup](docs/HOST-SETUP.md) · [Agent requests](docs/AGENT-SETUP.md)
 - [Agent operating guide](docs/AGENT-USAGE.md) · [Candidate setup](docs/CANDIDATE-SETUP.md)
-- [Changelog](CHANGELOG-5.1.md) · [Current candidate notes](docs/RELEASE-NOTES-5.1.4.md)
+- [Changelog (v6)](CHANGELOG-6.0.md) · [Architecture (v6)](docs/ARCHITECTURE-v6.md) · [Earlier 5.1 notes](CHANGELOG-5.1.md)
 - [Source-of-truth map](config/source-of-truth.json) · [Security policy](SECURITY.md)
 
 ## Built on Hindsight

@@ -345,7 +345,7 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 
 完整本机链路要分开验收：
 
-1. **构建：**运行安装器，确认它从 `VERSION` 报出 `EP 5.1.4`。
+1. **构建：**运行安装器，确认它从 `VERSION` 报出 `EP 6.1.0`。
 2. **API：**启动 `8888`，要求 `curl --fail http://127.0.0.1:8888/health` 成功。
 3. **Controller：**启动 `12079`，要求 `curl --fail http://127.0.0.1:12079/v1/status` 成功。
 4. **Console：**启动 `9999`，打开所选语言页面，创建/选择自己的 Bank，并实际点击健康和配置页面。
@@ -359,8 +359,8 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 [选择具体宿主](docs/HOST-SETUP-中文.md) → [复制对应 Agent 提示词](docs/AGENT-SETUP-中文.md)。
 **安装本候选包：**先看[候选版安装入口](docs/CANDIDATE-SETUP.md)。
 **给 Agent 读：**接入不等于会使用，继续阅读[Agent 日常操作协议](docs/AGENT-USAGE-中文.md)。
-本工作树是 5.1.4 候选线，当前文档分支为 `release/5.1.4`；产品版本始终读 [VERSION](VERSION)，
-旧的不可变 `v5.1.4` 标签不是本次文档构建的来源，不能根据旧 Tag 判断最新版。
+本工作树是 **6.1.0** 发行线，当前文档分支为 `release/6.1.0`（与 `main` 同步）；产品版本始终读 [VERSION](VERSION)，
+旧的 `v5.1.x` 标签仅作历史归档，不能根据旧 Tag 判断最新版。
 
 ### 环境要求
 
@@ -377,8 +377,8 @@ cd evolving-profile
 ./scripts/install-ep51.sh --mode local --no-launch
 ```
 
-脚本文件名沿用 5.1 发行线，实际版本读取 VERSION。这里使用当前候选
-`release/5.1.4` 分支以包含最新文档和修复；运行前确认 `VERSION` 为 `5.1.4`，
+脚本文件名沿用旧版兼容命名，实际版本读取 VERSION。这里使用当前
+`release/6.1.0` 分支以包含最新文档和修复；运行前确认 `VERSION` 为 `6.1.0`，
 并记录 `git rev-parse HEAD` 的提交。也可解压命名的核验归档后进入根目录。
 
 脚本执行预检与来源文本扫描，安装基础依赖，**先构建 SDK 再构建 Console**，
@@ -438,8 +438,8 @@ Worker 有独立配置与就绪要求。API 的 HTTP MCP 握手不能证明宿�
 | **WorkBuddy** | 先生成专用配置预览，客户端已安装且我授权后才注册，随后按Agent日常协议选工具。 |
 | **豆包工作** | 审阅实际插件配置，为当前任务启用并阅读日常协议；Skill不保证每轮自动调用。 |
 
-源码来源为 `https://github.com/gtkj/evolving-profile`（个人镜像 `https://github.com/ccygod/evolving-profile`）；使用精确
-当前 `release/5.1.4` 分支或对应命名核验归档，不能用旧远端分支替代。
+源码来源为 `https://github.com/gtkj/evolving-profile`（个人镜像 `https://github.com/ccygod/evolving-profile`）；使用
+`main` 或当前 `release/6.1.0` 分支（或对应命名核验归档），不能用旧远端分支替代。
 **[完整分宿主提示词（含 Hermes）直接复制](docs/AGENT-SETUP-中文.md)。**
 长版包括备份合并、绝对路径、健康检查、网页点击、工具/捕获验收、配置生效、可选项和停止回退。
 
@@ -496,7 +496,7 @@ Worker 有独立配置与就绪要求。API 的 HTTP MCP 握手不能证明宿�
   本候选不静默改变该行为，也不授权公开服务。
 
 产品版本读取 [`VERSION`](VERSION)。实际发布状态、测试、依赖风险和已知限制
-见[5.1.4 说明](docs/RELEASE-NOTES-5.1.4.md)与[发布记录](docs/RELEASE-LEDGER.md)，
+见 [v6 架构说明](docs/ARCHITECTURE-v6.md)、[v6 更新日志](CHANGELOG-6.0.md) 与 [发布记录](docs/RELEASE-LEDGER.md)，
 不在多个固定徽章中重复维护“最新版”。
 依赖的生产分类审计、完整工作区审计和保留的 RC 风险分别见[依赖风险说明](docs/DEPENDENCY-RISKS.md)。
 
@@ -511,7 +511,7 @@ EP 发行作者/维护者：**CCY**。[个人发行仓库](https://github.com/cc
 - [本地安装与回退](docs/LOCAL-SETUP.md) · [API 配置](api/README.md)
 - [完整部署](docs/DEPLOYMENT-中文.md) · [分宿主接入](docs/HOST-SETUP-中文.md) · [Agent 安装话](docs/AGENT-SETUP-中文.md)
 - [Agent 日常操作](docs/AGENT-USAGE-中文.md) · [候选包安装](docs/CANDIDATE-SETUP.md)
-- [更新日志](CHANGELOG-5.1.md) · [当前 5.1.4 说明](docs/RELEASE-NOTES-5.1.4.md)
+- [v6 更新日志](CHANGELOG-6.0.md) · [v6 架构说明](docs/ARCHITECTURE-v6.md) · [历史 5.1 更新日志](CHANGELOG-5.1.md)
 - [唯一真相源](config/source-of-truth.json) · [安全策略](SECURITY.md)
 
 ## 基于 Hindsight 开发

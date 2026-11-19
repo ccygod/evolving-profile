@@ -17,8 +17,8 @@
   <g font-family="Inter,Arial,sans-serif">
     <rect x="70" y="165" width="720" height="145" rx="22" fill="#0e2850" stroke="url(#user)" stroke-width="3"/>
     <text x="105" y="210" fill="#fff" font-size="25" font-weight="700">A · User Memory</text>
-    <text x="105" y="244" fill="#b6d8ff" font-size="17">Facts · Experiences · Entities · Observations</text>
-    <text x="105" y="274" fill="#b6d8ff" font-size="17">Preferences with conditions and reasons · Mental models</text>
+    <text x="105" y="244" fill="#b6d8ff" font-size="17">Facts · Experiences · Entities · Observations · Bi-temporal Entity State</text>
+    <text x="105" y="274" fill="#b6d8ff" font-size="17">Guardrail &amp; scoped 5D preferences · Deduplicated mental models</text>
     <rect x="70" y="340" width="720" height="145" rx="22" fill="#22194f" stroke="url(#agent)" stroke-width="3"/>
     <text x="105" y="385" fill="#fff" font-size="25" font-weight="700">B · Agent Process Memory</text>
     <text x="105" y="419" fill="#decaff" font-size="17">Trajectory · Failure episode · Repair pattern</text>
@@ -26,7 +26,7 @@
     <rect x="70" y="515" width="720" height="145" rx="22" fill="#173b3a" stroke="url(#rag)" stroke-width="3"/>
     <text x="105" y="560" fill="#fff" font-size="25" font-weight="700">C · External RAG</text>
     <text x="105" y="594" fill="#c9f7d9" font-size="17">Operator-selected PDF · DOCX · Markdown · data directories</text>
-    <text x="105" y="624" fill="#c9f7d9" font-size="17">Lexical + vector → RRF → Rerank → optional judge</text>
+    <text x="105" y="624" fill="#c9f7d9" font-size="17">Lexical + iterative vector → RRF → Bi-temporal &amp; Trust Rerank → optional judge</text>
   </g>
   <g stroke="#a7c7ff" stroke-width="4" fill="none" marker-end="url(#arrow)"><path d="M800 237 C900 237 900 340 1025 380"/><path d="M800 412 H1025"/><path d="M800 587 C900 587 900 480 1025 420"/></g>
   <g filter="url(#glow)"><rect x="1025" y="315" width="285" height="170" rx="28" fill="url(#ctx)" opacity=".96"/></g>
