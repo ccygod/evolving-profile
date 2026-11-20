@@ -29,7 +29,8 @@ def main() -> int:
     parser.add_argument("--mode", default="local", choices=["local"])
     parser.add_argument("--dry-run", action="store_true", help="Print steps without modifying files")
     parser.add_argument("--skip-deps", action="store_true", help="Skip uv/npm dependency installation")
-    parser.add_argument("--no-launch", action="store_true", help="Record build-only mode (default behavior)")
+    parser.add_argument("--no-launch", action="store_true", help="Build-only mode (skip starting services and auto-start registration)")
+    parser.add_argument("--no-autostart", action="store_true", help="Opt out of OS auto-start registration (enabled by default)")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
@@ -70,14 +71,29 @@ def main() -> int:
         run([npm_bin, "run", "build", "--workspace=@evolving-profile/client"], cwd=root, dry_run=args.dry_run)
         run([npm_bin, "run", "build", "--workspace=@evolving-profile/console"], cwd=root, dry_run=args.dry_run)
 
-    # 5. Write local launch manifest
+    # 5. Register OS auto-start by default (macOS LaunchAgents / Windows Task Scheduler ONLOGON / Linux systemd --user)
+    autostart_enabled = False
+    if not args.no_launch and not args.no_autostart:
+        data_root = Path(os.environ.get("EP_DATA_ROOT", str(Path.home() / ".evolving-profile"))).expanduser()
+        run(
+            [sys.executable, "-m", "v6.autostart", "install", "--code-root", str(root), "--data-root", str(data_root)]
+            + (["--dry-run"] if args.dry_run else []),
+            cwd=root,
+            dry_run=args.dry_run,
+        )
+        autostart_enabled = True
+    else:
+        print("Auto-start registration skipped (--no-launch or --no-autostart). Run `python -m v6.autostart install` to enable boot auto-start.")
+
+    # 6. Write local launch manifest
     manifest = {
         "product": "Evolving Profile",
         "version": version,
         "platform": platform.system(),
         "mode": args.mode,
         "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "launch_deferred": True,
+        "autostart_enabled": autostart_enabled,
+        "launch_deferred": bool(args.no_launch),
     }
     manifest_path = root / ".ep-install-manifest.json"
     print(f"+ write {manifest_path.name}")

@@ -3,7 +3,8 @@
 param(
     [switch]$DryRun,
     [switch]$SkipDeps,
-    [switch]$NoLaunch
+    [switch]$NoLaunch,
+    [switch]$NoAutostart
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,6 +20,7 @@ $pyArgs = @("run", "--python", "3.11", (Join-Path $Root "scripts\install.py"), "
 if ($DryRun) { $pyArgs += "--dry-run" }
 if ($SkipDeps) { $pyArgs += "--skip-deps" }
 if ($NoLaunch) { $pyArgs += "--no-launch" }
+if ($NoAutostart) { $pyArgs += "--no-autostart" }
 
 & $uv.Source @pyArgs
 exit $LASTEXITCODE

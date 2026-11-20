@@ -371,21 +371,21 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 
 ### 1. 一键安装构建
 
-**跨平台推荐（macOS / Linux / Windows PowerShell 通用；即使 Windows 系统自带旧版 Python 3.8，`uv` 也会自动托管 Python 3.11+，无需折腾 WSL）：**
+**跨平台推荐（macOS / Linux / Windows PowerShell 通用；`uv` 自动托管 Python 3.11+，默认自动注册开机自启，重启电脑后自动恢复后台采集与检索；无需折腾 WSL）：**
 
 ```bash
-git clone --branch release/6.1.0 --single-branch https://github.com/gtkj/evolving-profile.git
+git clone https://github.com/gtkj/evolving-profile.git
 cd evolving-profile
-uv run --python 3.11 scripts/install.py --mode local --no-launch
+uv run --python 3.11 scripts/install.py --mode local
 ```
 
-**Windows PowerShell 也可直接运行：**
+**Windows PowerShell 也可直接运行（自动注册登录静默自启，无黑框弹窗）：**
 
 ```powershell
-.\scripts\install.ps1 -NoLaunch
+.\scripts\install.ps1
 ```
 
-macOS / Linux / WSL 仍保留兼容脚本 `./scripts/install-ep51.sh --mode local --no-launch`。运行前可确认 `VERSION` 为 `6.1.0` 并记录 `git rev-parse HEAD`。
+如仅构建不注册开机自启，可加 `--no-autostart` / `-NoAutostart`；随时可用 `uv run --python 3.11 -m v6.autostart install|uninstall|status` 管理开机自启（macOS LaunchAgents / Windows 任务计划程序 / Linux `systemd --user`）。macOS / Linux / WSL 仍保留兼容脚本 `./scripts/install-ep51.sh --mode local --no-launch`。
 
 脚本执行预检与来源文本扫描，安装基础依赖，**先构建 SDK 再构建 Console**，
 并生成本地启动清单；只在 `.env` 不存在时创建模板。
