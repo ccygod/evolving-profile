@@ -294,6 +294,7 @@ def build_production_jobs(data_root: str | Path, *, bank_id: str | None = None) 
         ScheduledJob("incremental-sync", 3600.0, lambda: _run_cmd([py, "-m", "v6.incremental_sync"], timeout=300)),
         ScheduledJob("entity-graph", 3600.0, lambda: _run_cmd([py, "-m", "v6.entity_graph"], timeout=600)),
         ScheduledJob("entity-state", 3600.0, lambda: _run_cmd([py, "-m", "v6.entity_state"], timeout=300)),
+        ScheduledJob("artifact-index", 3600.0, lambda: _run_cmd([py, "-m", "v6.artifact_index"], timeout=300)),
         ScheduledJob("ontology-hygiene", 86400.0, lambda: _run_cmd([py, "-m", "v6.ontology_hygiene", "--apply"], timeout=600)),
         ScheduledJob("sqlite-hygiene", 86400.0, lambda: _run_cmd([py, "-m", "v6.sqlite_hygiene", "--apply"], timeout=600)),
         ScheduledJob("pg-analyze", 86400.0, lambda: _run_cmd([py, "-m", "v6.pg_autotune", "--analyze-only"], timeout=300)),
