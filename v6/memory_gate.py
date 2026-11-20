@@ -32,6 +32,11 @@ USER_INVARIANT_TRIVIAL_RE = re.compile(
     re.I,
 )
 
+AGENT_TROUBLESHOOT_RE = re.compile(
+    r"(报错|失败|异常|崩溃|超时|卡住|怎么修|踩坑|修复|排查|回滚|\b(?:error|failed|exception|timeout|traceback|bug|fix|debug|crash)\b)",
+    re.I,
+)
+
 GENERIC_STOPWORDS = {
     "什么", "怎么", "如何", "可以", "应该", "需要", "进行", "通过", "使用", "一个",
     "这个", "那个", "这些", "那些", "他们", "我们", "你们", "自己", "因为", "所以",
@@ -363,6 +368,10 @@ def evaluate_l1_familiarity(
         lines.append(
             "Relevant preference hints: "
             + " ; ".join(f"[{p['enforcement']}] {p['text']}" for p in matched_prefs)
+        )
+    if AGENT_TROUBLESHOOT_RE.search(text):
+        lines.append(
+            "Process memory hint: troubleshooting/failure keywords detected — also consider `agent_recall` to check prior root causes & verified fixes."
         )
     lines.append("</ep_l1_familiarity_cue>")
 

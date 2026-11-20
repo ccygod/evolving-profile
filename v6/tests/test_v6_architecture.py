@@ -201,7 +201,7 @@ def test_load_router_from_data_root_and_production_jobs(tmp_path):
     assert {j.name for j in jobs} == {
         "retention-worker", "context-worker", "guidance-worker",
         "topic-catalog", "topic-semantics", "context-links", "events-sync", "incremental-sync", "entity-graph",
-        "entity-state", "ontology-hygiene", "sqlite-hygiene", "pg-analyze",
+        "entity-state", "artifact-index", "ontology-hygiene", "sqlite-hygiene", "pg-analyze",
     }
 
 
@@ -358,3 +358,22 @@ def test_memory_gate_is_domain_agnostic_and_non_overfitted(tmp_path):
         assert res["decision"] == "recall_recommended"
         assert "user_conditioned_task" in res["reasons"]
         assert "<ep_l1_familiarity_cue" in res["cue_text"]
+
+
+def test_artifact_index_extracts_cross_platform_paths_and_rare_terms():
+    from v6.artifact_index import extract_deliverable_paths, extract_rare_search_terms
+
+    sample = (
+        "已生成最新版 PDF: /Users/demo/Projects/out/高校教师AI培训_五场专题讲座_竖版全生图.pdf "
+        "和 Windows 报告 D:\\Work\\Reports\\q4_summary.docx "
+        "以及忽略 /Users/demo/repo/node_modules/pkg/index.js"
+    )
+    items = extract_deliverable_paths(sample)
+    names = [x[1] for x in items]
+    assert "高校教师AI培训_五场专题讲座_竖版全生图.pdf" in names
+    assert "q4_summary.docx" in names
+    assert "index.js" not in names
+
+    terms = extract_rare_search_terms("培训大纲竖版全生图 pdf")
+    assert "竖版全生图" in terms
+    assert "pdf" in terms
