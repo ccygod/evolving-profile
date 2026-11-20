@@ -426,22 +426,21 @@ macOS scheduler, cloud-backup boundary, upgrade and rollback steps are in
 
 ### 1. Install and build
 
-**Cross-platform (macOS / Linux / Windows PowerShell — recommended; `uv` auto-provisions Python 3.11+ even if system Python is older):**
+**Cross-platform (macOS / Linux / Windows PowerShell — recommended; `uv` auto-provisions Python 3.11+ and registers OS auto-start by default so EP resumes automatically after reboot):**
 
 ```bash
-git clone --branch release/6.1.0 --single-branch https://github.com/gtkj/evolving-profile.git
+git clone https://github.com/gtkj/evolving-profile.git
 cd evolving-profile
-uv run --python 3.11 scripts/install.py --mode local --no-launch
+uv run --python 3.11 scripts/install.py --mode local
 ```
 
-On **Windows PowerShell**, you can also run:
+On **Windows PowerShell** (registers silent `ONLOGON` Task Scheduler entries with no console popup):
 
 ```powershell
-.\scripts\install.ps1 -NoLaunch
+.\scripts\install.ps1
 ```
 
-Legacy Bash wrapper (`./scripts/install-ep51.sh --mode local --no-launch`) remains available for macOS/Linux/WSL.
-Before running, confirm `VERSION` is `6.1.0` and record the commit shown by `git rev-parse HEAD`.
+Pass `--no-autostart` / `-NoAutostart` for build-only installation, or manage boot auto-start anytime via `uv run --python 3.11 -m v6.autostart install|uninstall|status` (macOS LaunchAgents / Windows Task Scheduler / Linux `systemd --user`). Legacy Bash wrapper (`./scripts/install-ep51.sh --mode local --no-launch`) remains available for macOS/Linux/WSL.
 
 This runs preflight and a release text-source scan, installs base dependencies,
 builds the SDK **before** the Console and writes a local launch manifest.

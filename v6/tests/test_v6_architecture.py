@@ -377,3 +377,26 @@ def test_artifact_index_extracts_cross_platform_paths_and_rare_terms():
     terms = extract_rare_search_terms("培训大纲竖版全生图 pdf")
     assert "竖版全生图" in terms
     assert "pdf" in terms
+
+
+def test_autostart_renders_for_macos_windows_and_linux(tmp_path):
+    from v6.autostart import (
+        build_service_specs,
+        install_autostart,
+        render_macos_plist,
+        render_systemd_unit,
+        render_windows_launcher_vbs,
+    )
+
+    specs = build_service_specs(tmp_path / "code", tmp_path / "data")
+    assert {s["id"] for s in specs} == {"v6-model-router", "v6-daemon"}
+    plist = render_macos_plist(specs[0])
+    assert "<key>RunAtLoad</key><true/>" in plist and "<key>KeepAlive</key><true/>" in plist
+    vbs = render_windows_launcher_vbs(specs[1])
+    assert 'WshShell.Run' in vbs and ', 0, False' in vbs
+    unit = render_systemd_unit(specs[1])
+    assert "Restart=always" in unit and "WantedBy=default.target" in unit
+
+    for os_name in ("Darwin", "Windows", "Linux"):
+        res = install_autostart(tmp_path / "code", tmp_path / "data", system=os_name, dry_run=True)
+        assert res["status"] == "ok" and res["autostart_enabled"] is True and len(res["services"]) == 2
