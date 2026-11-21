@@ -911,9 +911,10 @@ TOOL = {
 EXHAUSTIVE_SEARCH_TOOL = {
     "name": "ep_exhaustive_search",
     "description": (
-        "全量无截断 SQL 检索（只读，保证 100% 覆盖率，不设 12s 超时或 Top-K 截断）。"
-        "凡是按时间区间（如 8–10 月）、项目/客户、宿主或全库盘点查询，必须优先使用本工具获取全量分组与精确 total_matched，"
-        "再按需翻页或用 read_source 核对原文。"
+        "全量 SQL 检索（只读）：total_matched 与分组覆盖全部匹配，items 分页返回。"
+        "凡是按时间区间（如 8–10 月、本周、上个月）、项目/客户、宿主或“梳理/盘点/全部”类问题，必须先用本工具拿全量分组与精确总数，"
+        "再按 next_offset 翻页、用 sections 只取需要的分区，最后用 read_source 核对关键原文。"
+        "recall/research 是语义 Top-K，不能单独作为“已查全”的依据。日期按北京时间解释。"
     ),
     "inputSchema": {
         "type": "object",
@@ -923,14 +924,19 @@ EXHAUSTIVE_SEARCH_TOOL = {
             "end_date": {"type": "string", "description": "结束日期（YYYY-MM-DD 或 ISO8601），可选。"},
             "keywords": {"type": "array", "items": {"type": "string", "minLength": 1}, "maxItems": 16, "description": "可选关键词/别名列表（OR 匹配）。"},
             "project": {"type": "string", "description": "项目名或路径子串过滤，可选。"},
-            "host": {"type": "string", "description": "宿主过滤（codex/claude-code/claude-desktop/trae 等），可选。"},
+            "host": {"type": "string", "description": "宿主过滤，按宿主家族匹配：codex / claude（含 claude-code、claude-desktop）/ antigravity / workbuddy / trae；同时作用于 work_ledger 与 memory_units。可选。"},
             "fact_types": {"type": "array", "items": {"type": "string", "enum": ["world", "experience", "observation"]}, "description": "限定事实类型，可选。"},
             "entity_category": {"type": "string", "enum": ["client_org", "person", "project", "product_tech", "location", "other"], "description": "按实体分类检索（如 client_org 查全部客户/机构），可选。"},
             "time_mode": {"type": "string", "enum": ["either", "occurred", "mentioned"], "default": "either", "description": "时间口径：occurred(发生时间)、mentioned(提及时间)、either(优先发生时间)。"},
-            "group_by": {"type": "string", "enum": ["project", "month", "week", "host"], "default": "project", "description": "work_ledger 全量分组维度。"},
-            "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
+            "group_by": {"type": "string", "enum": ["project", "month", "week", "host", "session"], "default": "project", "description": "work_ledger 全量分组维度；session 每个会话一组并给出标题（首个实质请求），适合“梳理某段时间做了什么”后再自行按项目归类。"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 10, "description": "每个分区本页条数（对 work_ledger/memory_units/summaries/artifacts 都生效）。"},
             "offset": {"type": "integer", "minimum": 0, "default": 0},
             "include_summaries": {"type": "boolean", "default": True},
+            "sections": {"type": "array", "items": {"type": "string", "enum": ["work_ledger", "memory_units", "summaries", "artifacts"]}, "description": "只返回这些分区的 items（总数仍全部计算）；默认全部。"},
+            "group_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 30, "description": "work_ledger 分组最多返回多少组；groups_total 给出全部组数。"},
+            "match_mode": {"type": "string", "enum": ["any", "all"], "default": "any", "description": "多个关键词：any=任一命中，all=全部命中。"},
+            "include_all_banks": {"type": "boolean", "default": False, "description": "默认只查主库；true 时把旧归档库（豆包/千问等）也算进来，可能重复计数。"},
+            "check_id": {"type": "string", "description": "当前 Hook 给出的 check_id。"},
         },
     },
     "annotations": {"readOnlyHint": True, "openWorldHint": False},
@@ -2457,9 +2463,14 @@ for line in (sys.stdin if __name__ == "__main__" else ()):
                     entity_category=args.get('entity_category'),
                     time_mode=str(args.get('time_mode') or 'either'),
                     group_by=str(args.get('group_by') or 'project'),
-                    limit=int(args.get('limit') or 100),
+                    limit=int(args.get('limit') or 10),
                     offset=int(args.get('offset') or 0),
                     include_summaries=bool(args.get('include_summaries', True)),
+                    match_mode=str(args.get('match_mode') or 'any'),
+                    bank_id=BANK,
+                    include_all_banks=bool(args.get('include_all_banks', False)),
+                    sections=args.get('sections') or None,
+                    group_limit=int(args.get('group_limit') or 30),
                 )
                 reply(message_id, {'content':[{'type':'text','text':json.dumps(value,ensure_ascii=False)}], 'isError':False})
             elif params.get('name') == 'rag_search':

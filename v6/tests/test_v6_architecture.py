@@ -201,7 +201,7 @@ def test_load_router_from_data_root_and_production_jobs(tmp_path):
     assert {j.name for j in jobs} == {
         "retention-worker", "context-worker", "guidance-worker",
         "topic-catalog", "topic-semantics", "context-links", "events-sync", "incremental-sync", "entity-graph",
-        "entity-state", "artifact-index", "ontology-hygiene", "sqlite-hygiene", "pg-analyze",
+        "entity-state", "artifact-index", "ontology-hygiene", "sqlite-hygiene", "pg-analyze", "ledger-bank-bridge",
     }
 
 

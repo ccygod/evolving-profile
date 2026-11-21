@@ -1474,6 +1474,14 @@ def record_memory_route_probe(hook_input: dict, prompt: str, config: dict, invoc
         return {}
 
 
+def _coverage_instruction(contract) -> str:
+    try:
+        from lib.coverage_intent import instruction
+        return instruction(contract)
+    except Exception:
+        return "这是时间段/盘点类问题：先调用 ep_exhaustive_search 获取全量分组与总数，再用 recall/research 补细节。"
+
+
 def format_memory_route_context(value: dict) -> str:
     check_id=str(value.get('check_id') or '')
     route=str(value.get('recommended_route') or 'unknown')
@@ -1487,7 +1495,19 @@ def format_memory_route_context(value: dict) -> str:
     payload={'check_id':check_id,'recommended_route':route,'reason':reason,'candidate_count':probe.get('candidate_count'),
              'catalog_status':probe.get('status'),'catalog_coverage':probe.get('catalog_coverage'),'matched_entities':entities,'catalog_hints':hints,'agent_may_override':True,
              'catalog_miss_does_not_prove_bank_absence':True}
+    coverage=None
+    try:
+        from lib.coverage_intent import detect as _coverage_detect
+        coverage=_coverage_detect(str(value.get('raw_prompt') or value.get('query') or ''))
+    except Exception:
+        coverage=None
+    if coverage:
+        payload['probe_route']=route
+        payload['recommended_route']=route='exhaustive'
+        payload['coverage_contract']={k:coverage.get(k) for k in ('window','inventory','time_zone')}
     route_instruction = (
+        _coverage_instruction(coverage)
+        if coverage else
         "单点历史问题必须实际调用 user_recall；若为空、主体不匹配或时间/范围不足，升级一次 user_research。"
         if route == "recall" else
         "这是开放盘点或多实体时间线，必须实际调用 user_research，并继续分页或回读原文。"
