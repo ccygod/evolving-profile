@@ -154,6 +154,18 @@ def discover(bank,query,api,root=DEFAULT_ROOT,page_size=8,relevance_policy=None)
     return read_page(bank,rid,0,api,root,page_size,relevance_policy=relevance_policy)
 
 
+def _beijing_window(window):
+    """Date-only bounds are the user's calendar days (Asia/Shanghai), not UTC days."""
+    out=dict(window)
+    for key,suffix in (('start','T00:00:00+08:00'),('end','T23:59:59+08:00')):
+        value=str(out.get(key) or '').strip()
+        if len(value)==10 and value[4]=='-' and value[7]=='-':
+            out[key]=value+suffix
+        elif 'T' in value and not any(z in value[10:] for z in ('+','Z','-')):
+            out[key]=value+'+08:00'
+    return out
+
+
 def search(bank,query,api,root=DEFAULT_ROOT,facets=None,budget='high',max_tokens=4096,page_size=8,types=None,temporal_window=None,prefer_observations=False,relevance_policy=None):
     """Bounded official candidate retrieval; no local semantic veto or answer generation.
 
@@ -175,6 +187,8 @@ def search(bank,query,api,root=DEFAULT_ROOT,facets=None,budget='high',max_tokens
         raise ValueError('types must contain world, experience or observation')
     if temporal_window is not None and (not isinstance(temporal_window,dict) or not temporal_window.get('start') or not temporal_window.get('end')):
         raise ValueError('temporal_window requires start and end')
+    if temporal_window is not None:
+        temporal_window=_beijing_window(temporal_window)
     queries=list(dict.fromkeys(queries));root=Path(root);rid=str(uuid.uuid4());path=root/(rid+'.json')
     start=time.monotonic()
     state={'research_id':rid,'bank':bank,'query':query,'status':'running','created_at':time.time(),

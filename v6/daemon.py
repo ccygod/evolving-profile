@@ -306,6 +306,8 @@ def build_production_jobs(data_root: str | Path, *, bank_id: str | None = None) 
         ScheduledJob("topic-semantics", 600.0, lambda: _run_cmd(topic_semantics_cmd, env=catalog_env, timeout=900)),
         ScheduledJob("context-links", 3600.0, lambda: _run_cmd([py, str(host_adapter / "context-bank-associations.py")], cwd=host_adapter, timeout=600)),
         ScheduledJob("events-sync", 3600.0, lambda: _run_events_sync_py(py, root)),
+        # Hosts without a native retain hook (Antigravity) reach the Bank through the ledger.
+        ScheduledJob("ledger-bank-bridge", 900.0, lambda: _run_cmd([py, "-m", "v6.ledger_bank_bridge"], timeout=600)),
         ScheduledJob("incremental-sync", 3600.0, lambda: _run_cmd([py, "-m", "v6.incremental_sync"], timeout=300)),
         ScheduledJob("entity-graph", 3600.0, lambda: _run_cmd([py, "-m", "v6.entity_graph"], timeout=600)),
         ScheduledJob("entity-state", 3600.0, lambda: _run_cmd([py, "-m", "v6.entity_state"], timeout=300)),

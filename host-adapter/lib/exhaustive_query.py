@@ -12,6 +12,7 @@ vs `mentioned_at` timestamps.
 from __future__ import annotations
 
 import datetime as dt
+from urllib.parse import unquote
 import os
 import sys
 from pathlib import Path
@@ -19,6 +20,31 @@ from typing import Any
 
 EVENTS_DIR = Path(os.environ.get("EVOLVING_PROFILE_HOME") or Path.home() / ".evolving-profile") / "events"
 DEFAULT_BANK = os.environ.get("EVOLVING_PROFILE_BANK_ID", "")
+DEFAULT_LIMIT = 10
+SECTIONS = ("work_ledger", "memory_units", "summaries", "artifacts")
+_ITEM_TEXT = 200
+
+
+HOST_FAMILIES = {"claude": "claude", "claude-code": "claude", "claude-desktop": "claude", "claude-cli": "claude",
+                 "claude_code": "claude", "claude_desktop": "claude"}
+_LEDGER_HOST_FAMILY_SQL = (
+    "CASE WHEN w.host ILIKE 'claude%%' THEN 'claude' "
+    "WHEN w.host ILIKE '%%,%%' THEN split_part(w.host, ',', 1) ELSE w.host END"
+)
+
+
+def host_family(host: str | None) -> str:
+    h = str(host or "").strip().lower()
+    return HOST_FAMILIES.get(h, h)
+
+
+def _page(total: int, offset: int, returned: int, included: bool = True) -> dict[str, Any]:
+    if not included:
+        return {"total_matched": total, "returned": 0, "items_omitted": True,
+                "has_more": total > 0, "next_offset": None}
+    nxt = offset + returned
+    return {"total_matched": total, "returned": returned, "offset": offset,
+            "has_more": nxt < total, "next_offset": nxt if nxt < total else None}
 
 
 def _connect():
@@ -80,17 +106,28 @@ def exhaustive_search(
     entity_category: str | None = None,
     time_mode: str = "either",
     group_by: str = "project",
-    limit: int = 100,
+    limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     include_summaries: bool = True,
     match_mode: str = "any",
-    include_all_banks: bool = True,
+    include_all_banks: bool = False,
+    sections: list[str] | None = None,
+    group_limit: int = 30,
 ) -> dict[str, Any]:
-    """Run an exhaustive SQL scan across memory_units, work_ledger, and summaries."""
+    """Run an exhaustive SQL scan across memory_units, work_ledger, and summaries.
+
+    Totals and group counts are always computed over the full match set; only the
+    item lists are paged (``limit``/``offset`` apply to every section) so a single
+    reply stays small enough for a host's tool-result budget.
+    """
     t_start = _parse_date(start_date, end_of_day=False)
     t_end = _parse_date(end_date, end_of_day=True)
-    limit = max(1, min(int(limit or 100), 500))
+    limit = max(1, min(int(limit or DEFAULT_LIMIT), 200))
     offset = max(0, int(offset or 0))
+    group_limit = max(1, min(int(group_limit or 30), 500))
+    wanted = {str(x).strip().lower() for x in (sections or []) if str(x).strip()} & set(SECTIONS)
+    if not wanted:
+        wanted = set(SECTIONS)
     kw_list = [k for k in (keywords or []) if isinstance(k, str) and k.strip()]
     time_mode = time_mode if time_mode in ("either", "occurred", "mentioned") else "either"
 
@@ -109,12 +146,12 @@ def exhaustive_search(
             cov_params.append(t_end)
         cur.execute(
             f"""
-            SELECT host, COUNT(*) AS turns, COUNT(DISTINCT session_id) AS sessions,
+            SELECT {_LEDGER_HOST_FAMILY_SQL.replace('w.host', 'host')} AS host_family, COUNT(*) AS turns, COUNT(DISTINCT session_id) AS sessions,
                    MIN(started_at AT TIME ZONE 'Asia/Shanghai')::text,
                    MAX(started_at AT TIME ZONE 'Asia/Shanghai')::text
             FROM ep_events.work_ledger
             WHERE {' AND '.join(cov_where)}
-            GROUP BY host
+            GROUP BY 1
             ORDER BY turns DESC
             """,
             cov_params,
@@ -134,9 +171,12 @@ def exhaustive_search(
         if t_end is not None:
             wl_where.append("w.started_at <= %s")
             wl_params.append(t_end)
-        if host and host.strip():
-            wl_where.append("w.host = %s")
-            wl_params.append(host.strip())
+        family = host_family(host) if host and host.strip() else ""
+        if family:
+            # Ledger labels the same Claude session as claude-code and claude-desktop
+            # (and some legacy rows as "claude-desktop,codex"); filter by family.
+            wl_where.append(f"({_LEDGER_HOST_FAMILY_SQL}) = %s")
+            wl_params.append(family)
         if project and project.strip():
             wl_where.append("(COALESCE(w.project_key,'') ILIKE %s OR COALESCE(w.project_path,'') ILIKE %s)")
             plike = f"%{project.strip()}%"
@@ -166,8 +206,14 @@ def exhaustive_search(
             "project": proj_col,
             "month": "to_char(w.started_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM')",
             "week": "to_char(date_trunc('week', w.started_at AT TIME ZONE 'Asia/Shanghai'), 'YYYY-MM-DD')",
-            "host": "w.host",
+            "host": _LEDGER_HOST_FAMILY_SQL,
+            "session": f"({_LEDGER_HOST_FAMILY_SQL}) || ':' || w.session_id",
         }.get(group_by, proj_col)
+        title_sql = (
+            "(array_agg(LEFT(regexp_replace(w.user_request, '\\s+', ' ', 'g'), 100) ORDER BY w.started_at, w.turn_seq)"
+            " FILTER (WHERE length(btrim(COALESCE(w.user_request, ''))) >= 8))[1]"
+            if group_by == "session" else "NULL"
+        )
 
         cur.execute(
             f"""
@@ -176,7 +222,9 @@ def exhaustive_search(
                    COUNT(DISTINCT w.session_id) AS session_count,
                    MIN(w.started_at AT TIME ZONE 'Asia/Shanghai')::text AS first_at,
                    MAX(w.started_at AT TIME ZONE 'Asia/Shanghai')::text AS last_at,
-                   array_agg(DISTINCT w.host) AS hosts
+                   array_agg(DISTINCT w.host) AS hosts,
+                   {title_sql} AS title,
+                   (array_agg(DISTINCT {proj_col}))[1:3] AS projects
             FROM ep_events.work_ledger w
             {wl_join}
             WHERE {wl_cond}
@@ -193,23 +241,30 @@ def exhaustive_search(
                 "first_at": r[3],
                 "last_at": r[4],
                 "hosts": r[5],
+                **({"title": r[6], "projects": r[7]} if group_by == "session" else {}),
             }
             for r in cur.fetchall()
         ]
+        groups_total = len(wl_groups)
+        wl_groups = wl_groups[:group_limit]
+        if "work_ledger" not in wanted:
+            wl_items_sql_limit = 0
+        else:
+            wl_items_sql_limit = limit
 
         cur.execute(
             f"""
             SELECT w.host, w.session_id, w.turn_seq, {proj_col} AS project_key,
                    (w.started_at AT TIME ZONE 'Asia/Shanghai')::text AS started_at,
-                   w.status, LEFT(COALESCE(w.user_request, ''), 240) AS user_request,
-                   LEFT(COALESCE(w.summary_line, w.final_answer, ''), 240) AS summary_preview
+                   w.status, LEFT(COALESCE(w.user_request, ''), %s) AS user_request,
+                   LEFT(COALESCE(w.summary_line, w.final_answer, ''), %s) AS summary_preview
             FROM ep_events.work_ledger w
             {wl_join}
             WHERE {wl_cond}
             ORDER BY w.started_at DESC NULLS LAST, w.turn_seq DESC
             LIMIT %s OFFSET %s
             """,
-            wl_params + [limit, offset],
+            [_ITEM_TEXT, _ITEM_TEXT] + wl_params + [wl_items_sql_limit, offset],
         )
         wl_items = [
             {
@@ -236,18 +291,23 @@ def exhaustive_search(
         if bank_id and not include_all_banks:
             mu_where = ["mu.bank_id = %s"]
             mu_params: list[Any] = [bank_id]
-        elif bank_id and bank_id != DEFAULT_BANK:
-            mu_where = ["mu.bank_id = %s"]
-            mu_params = [bank_id]
         else:
+            # Explicit opt-in (or no primary bank configured): every non-test bank.
             mu_where = ["mu.bank_id !~ %s"]
             mu_params = [_TEST_BANK_REGEX]
+            include_all_banks = True
         if t_start is not None:
             mu_where.append(f"{time_col} >= %s")
             mu_params.append(t_start)
         if t_end is not None:
             mu_where.append(f"{time_col} <= %s")
             mu_params.append(t_end)
+        if family:
+            mu_where.append(
+                """EXISTS (SELECT 1 FROM public.documents d WHERE d.bank_id = mu.bank_id AND d.id = mu.document_id
+                       AND (%s = ANY(d.tags) OR EXISTS (SELECT 1 FROM unnest(d.tags) t WHERE t ILIKE %s)))"""
+            )
+            mu_params.extend([f"host_family:{family}", f"host:{family}%"])
         if fact_types:
             mu_where.append("mu.fact_type = ANY(%s)")
             mu_params.append(list(fact_types))
@@ -305,14 +365,14 @@ def exhaustive_search(
                    ({time_col} AT TIME ZONE 'Asia/Shanghai')::text AS effective_at,
                    (mu.occurred_start AT TIME ZONE 'Asia/Shanghai')::text AS occurred_at,
                    (mu.mentioned_at AT TIME ZONE 'Asia/Shanghai')::text AS mentioned_at,
-                   LEFT(mu.text, 400) AS text,
-                   LEFT(COALESCE(mu.context, ''), 120) AS context
+                   LEFT(mu.text, %s) AS text,
+                   mu.bank_id
             FROM public.memory_units mu
             WHERE {mu_cond}
             ORDER BY {time_col} DESC NULLS LAST
             LIMIT %s OFFSET %s
             """,
-            mu_params + [limit, offset],
+            [_ITEM_TEXT] + mu_params + [limit if "memory_units" in wanted else 0, offset],
         )
         mu_items = [
             {
@@ -322,14 +382,16 @@ def exhaustive_search(
                 "effective_at": r[3],
                 "occurred_at": r[4],
                 "mentioned_at": r[5],
+                "time_basis": "occurred" if r[4] else "mentioned",
                 "text": r[6],
-                "context": r[7],
+                **({"bank_id": r[7]} if include_all_banks else {}),
             }
             for r in cur.fetchall()
         ]
 
         # 3. Pre-computed summaries
         summaries = []
+        summaries_total = 0
         if include_summaries:
             sm_where = ["status IN ('ok', 'active')"]
             sm_params: list[Any] = []
@@ -342,6 +404,8 @@ def exhaustive_search(
             if project and project.strip():
                 sm_where.append("array_to_string(project_keys, ',') ILIKE %s")
                 sm_params.append(f"%{project.strip()}%")
+            cur.execute(f"SELECT COUNT(*) FROM ep_events.summaries WHERE {' AND '.join(sm_where)}", sm_params)
+            summaries_total = int(cur.fetchone()[0])
             cur.execute(
                 f"""
                 SELECT level, key, path,
@@ -351,9 +415,9 @@ def exhaustive_search(
                 FROM ep_events.summaries
                 WHERE {' AND '.join(sm_where)}
                 ORDER BY period_end DESC NULLS LAST
-                LIMIT 50
+                LIMIT %s OFFSET %s
                 """,
-                sm_params,
+                sm_params + [limit if "summaries" in wanted else 0, offset],
             )
             summaries = [
                 {
@@ -393,18 +457,18 @@ def exhaustive_search(
             cur.execute(
                 f"""
                 SELECT file_name, file_path, ext, project_key, source_kind,
-                       left(COALESCE(snippet, ''), 180),
+                       left(COALESCE(snippet, ''), 120),
                        (mentioned_at AT TIME ZONE 'Asia/Shanghai')::text
                 FROM ep_events.artifacts
                 WHERE {' AND '.join(art_where)}
                 ORDER BY mentioned_at DESC NULLS LAST
-                LIMIT 50
+                LIMIT %s OFFSET %s
                 """,
-                art_params,
+                art_params + [limit if "artifacts" in wanted else 0, offset],
             )
             artifacts_items = [
                 {
-                    "file_name": r[0],
+                    "file_name": unquote(r[0] or ""),
                     "file_path": r[1],
                     "ext": r[2],
                     "project_key": r[3],
@@ -427,6 +491,8 @@ def exhaustive_search(
                 "entity_classifications_ready": has_ent_cls,
                 "project_aliases_ready": has_proj_alias,
                 "include_all_banks": include_all_banks,
+                "time_zone": "Asia/Shanghai",
+                "time_note": "日期按北京时间解释；memory_units 的 time_basis=mentioned 表示没有发生时间、按提及/入库时间计。",
             },
             "filters": {
                 "bank_id": bank_id,
@@ -435,36 +501,35 @@ def exhaustive_search(
                 "keywords": kw_list,
                 "project": project,
                 "host": host,
+                "host_family": family or None,
                 "fact_types": fact_types,
                 "entity_category": entity_category,
                 "time_mode": time_mode,
                 "group_by": group_by,
             },
+            "sections": sorted(wanted),
             "work_ledger": {
-                "total_matched": wl_total,
-                "returned": len(wl_items),
-                "has_more": (offset + len(wl_items)) < wl_total,
-                "next_offset": (offset + len(wl_items)) if (offset + len(wl_items)) < wl_total else None,
+                **_page(wl_total, offset, len(wl_items), "work_ledger" in wanted),
+                "groups_total": groups_total,
+                "groups_truncated": groups_total > len(wl_groups),
                 "groups": wl_groups,
                 "items": wl_items,
             },
             "memory_units": {
-                "total_matched": mu_total,
-                "returned": len(mu_items),
-                "has_more": (offset + len(mu_items)) < mu_total,
-                "next_offset": (offset + len(mu_items)) if (offset + len(mu_items)) < mu_total else None,
+                **_page(mu_total, offset, len(mu_items), "memory_units" in wanted),
                 "by_fact_type": mu_by_type,
                 "items": mu_items,
             },
             "summaries": {
-                "matched_count": len(summaries),
+                **_page(summaries_total, offset, len(summaries), "summaries" in wanted),
+                "matched_count": summaries_total,
                 "items": summaries,
             },
             "artifacts": {
-                "total_matched": artifacts_total,
-                "returned": len(artifacts_items),
+                **_page(artifacts_total, offset, len(artifacts_items), "artifacts" in wanted),
                 "items": artifacts_items,
             },
+            "paging_note": "total/groups 覆盖全量；items 只是第 offset 页。需要更多时用相同条件加 offset=next_offset，并用 sections 只取需要的分区。",
         }
     finally:
         conn.close()
