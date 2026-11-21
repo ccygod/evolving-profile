@@ -25,9 +25,20 @@ def render_host_guidance(profile,readiness,locale):
             'mandatory_each_turn':False,'capture_enabled':False,'current_prompt_wins':True}
 
 
+_NATIVE_CAPTURE_HOSTS = frozenset({"codex", "antigravity", "claude-code", "workbuddy", "trae"})
+
+
+def _capture_allowed(host: str) -> bool:
+    if host in _NATIVE_CAPTURE_HOSTS:
+        return True
+    if os.environ.get("EVOLVING_PROFILE_ALLOW_HOST_CAPTURE", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    return False
+
+
 def guard_non_codex_hook(raw):
     host=os.environ.get('EVOLVING_PROFILE_HOST_ID','codex')
-    if host=='codex':return False
+    if _capture_allowed(host):return False
     try:
         profile=get_profile(load_registry(),host)
         if raw.get('hook_event_name') in ('SessionStart','UserPromptSubmit'):
@@ -41,7 +52,7 @@ def guard_non_codex_hook(raw):
 
 
 def route_external_hook():
-    if os.environ.get('EVOLVING_PROFILE_HOST_ID','codex')=='codex':return False
+    if _capture_allowed(os.environ.get('EVOLVING_PROFILE_HOST_ID','codex')):return False
     try:
         body=sys.stdin.read(1024*1024+1)
         if len(body)>1024*1024:raise ValueError('hook_budget_exceeded')

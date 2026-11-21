@@ -40,11 +40,11 @@ def _parse_date(value: str | None, *, end_of_day: bool = False) -> dt.datetime |
     return parsed
 
 
-def _keyword_clause(columns: list[str], keywords: list[str], *, cjk_vector_col: str | None = None) -> tuple[str, list[Any]]:
+def _keyword_clause(columns: list[str], keywords: list[str], *, cjk_vector_col: str | None = None, match_mode: str = "any") -> tuple[str, list[Any]]:
     cleaned = [k.strip() for k in (keywords or []) if isinstance(k, str) and k.strip()]
     if not cleaned:
         return "", []
-    or_parts = []
+    parts = []
     params: list[Any] = []
     for kw in cleaned[:16]:
         sub_ors = []
@@ -55,8 +55,9 @@ def _keyword_clause(columns: list[str], keywords: list[str], *, cjk_vector_col: 
         for col in columns:
             sub_ors.append(f"COALESCE({col}, '') ILIKE %s")
             params.append(like)
-        or_parts.append("(" + " OR ".join(sub_ors) + ")")
-    return "(" + " OR ".join(or_parts) + ")", params
+        parts.append("(" + " OR ".join(sub_ors) + ")")
+    joiner = " AND " if str(match_mode or "any").lower() == "all" else " OR "
+    return "(" + joiner.join(parts) + ")", params
 
 
 def _has_table(cur, schema: str, table: str) -> bool:
@@ -82,6 +83,8 @@ def exhaustive_search(
     limit: int = 100,
     offset: int = 0,
     include_summaries: bool = True,
+    match_mode: str = "any",
+    include_all_banks: bool = True,
 ) -> dict[str, Any]:
     """Run an exhaustive SQL scan across memory_units, work_ledger, and summaries."""
     t_start = _parse_date(start_date, end_of_day=False)
@@ -139,7 +142,7 @@ def exhaustive_search(
             plike = f"%{project.strip()}%"
             wl_params.extend([plike, plike])
         kw_sql, kw_params = _keyword_clause(
-            ["w.user_request", "w.final_answer", "w.project_key", "w.summary_line"], kw_list
+            ["w.user_request", "w.final_answer", "w.project_key", "w.summary_line"], kw_list, match_mode=match_mode
         )
         if kw_sql:
             wl_where.append(kw_sql)
@@ -226,11 +229,19 @@ def exhaustive_search(
         time_col = {
             "occurred": "COALESCE(mu.occurred_start, mu.event_date)",
             "mentioned": "mu.mentioned_at",
-            "either": "COALESCE(mu.event_date, mu.occurred_start, mu.mentioned_at)",
+            "either": "COALESCE(mu.event_date, mu.occurred_start, mu.mentioned_at, mu.created_at)",
         }[time_mode]
 
-        mu_where = ["mu.bank_id = %s"]
-        mu_params: list[Any] = [bank_id]
+        _TEST_BANK_REGEX = r"^(test[_-]|pool-test-|md-|maint-|mmcron-|mmscope-|recon-|wh-retain-)"
+        if bank_id and not include_all_banks:
+            mu_where = ["mu.bank_id = %s"]
+            mu_params: list[Any] = [bank_id]
+        elif bank_id and bank_id != DEFAULT_BANK:
+            mu_where = ["mu.bank_id = %s"]
+            mu_params = [bank_id]
+        else:
+            mu_where = ["mu.bank_id !~ %s"]
+            mu_params = [_TEST_BANK_REGEX]
         if t_start is not None:
             mu_where.append(f"{time_col} >= %s")
             mu_params.append(t_start)
@@ -245,7 +256,7 @@ def exhaustive_search(
             plike = f"%{project.strip()}%"
             mu_params.extend([plike, plike])
         mu_kw_sql, mu_kw_params = _keyword_clause(
-            ["mu.text", "mu.context"], kw_list, cjk_vector_col="mu.search_vector_cjk_v1"
+            ["mu.text", "mu.context"], kw_list, cjk_vector_col="mu.search_vector_cjk_v1", match_mode=match_mode
         )
         if mu_kw_sql:
             mu_where.append(mu_kw_sql)
@@ -356,9 +367,58 @@ def exhaustive_search(
                 for r in cur.fetchall()
             ]
 
+        artifacts_items = []
+        artifacts_total = 0
+        if _has_table(cur, "ep_events", "artifacts"):
+            art_where = ["1=1"]
+            art_params: list[Any] = []
+            if t_start is not None:
+                art_where.append("mentioned_at >= %s")
+                art_params.append(t_start)
+            if t_end is not None:
+                art_where.append("mentioned_at <= %s")
+                art_params.append(t_end)
+            if project and project.strip():
+                art_where.append("(COALESCE(project_key, '') ILIKE %s OR file_path ILIKE %s)")
+                plike = f"%{project.strip()}%"
+                art_params.extend([plike, plike])
+            art_kw_sql, art_kw_params = _keyword_clause(
+                ["file_name", "file_path", "snippet"], kw_list, match_mode=match_mode
+            )
+            if art_kw_sql:
+                art_where.append(art_kw_sql)
+                art_params.extend(art_kw_params)
+            cur.execute(f"SELECT COUNT(*) FROM ep_events.artifacts WHERE {' AND '.join(art_where)}", art_params)
+            artifacts_total = int(cur.fetchone()[0])
+            cur.execute(
+                f"""
+                SELECT file_name, file_path, ext, project_key, source_kind,
+                       left(COALESCE(snippet, ''), 180),
+                       (mentioned_at AT TIME ZONE 'Asia/Shanghai')::text
+                FROM ep_events.artifacts
+                WHERE {' AND '.join(art_where)}
+                ORDER BY mentioned_at DESC NULLS LAST
+                LIMIT 50
+                """,
+                art_params,
+            )
+            artifacts_items = [
+                {
+                    "file_name": r[0],
+                    "file_path": r[1],
+                    "ext": r[2],
+                    "project_key": r[3],
+                    "source_kind": r[4],
+                    "snippet": r[5],
+                    "mentioned_at": r[6],
+                }
+                for r in cur.fetchall()
+            ]
+
         return {
             "schema": "evolving-profile.exhaustive-search.v2",
             "mode": "exhaustive_sql_scan",
+            "match_mode": match_mode,
             "source_coverage": {
                 "work_ledger_hosts_in_window": host_coverage,
                 "memory_units_with_occurred_start": mu_with_occurred,
@@ -366,6 +426,7 @@ def exhaustive_search(
                 "occurred_start_ratio": round(mu_with_occurred / mu_total, 4) if mu_total else 0.0,
                 "entity_classifications_ready": has_ent_cls,
                 "project_aliases_ready": has_proj_alias,
+                "include_all_banks": include_all_banks,
             },
             "filters": {
                 "bank_id": bank_id,
@@ -398,6 +459,11 @@ def exhaustive_search(
             "summaries": {
                 "matched_count": len(summaries),
                 "items": summaries,
+            },
+            "artifacts": {
+                "total_matched": artifacts_total,
+                "returned": len(artifacts_items),
+                "items": artifacts_items,
             },
         }
     finally:
