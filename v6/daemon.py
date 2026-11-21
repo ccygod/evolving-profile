@@ -215,7 +215,7 @@ def _run_events_sync_py(py: str, root: Path) -> dict[str, Any]:
     since = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
     batch = "auto-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     errors: list[str] = []
-    for adapter in ("codex", "claude_native", "trae", "antigravity"):
+    for adapter in ("codex", "claude_native", "trae", "antigravity", "workbuddy"):
         try:
             _run_cmd([py, str(ev_dir / "replay.py"), "--adapter", adapter, "--since", since, "--batch-id", f"{batch}-{adapter}"], timeout=300)
         except Exception as exc:
