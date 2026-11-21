@@ -320,7 +320,7 @@ def exhaustive_search(
         # 3. Pre-computed summaries
         summaries = []
         if include_summaries:
-            sm_where = ["status = 'active'"]
+            sm_where = ["status IN ('ok', 'active')"]
             sm_params: list[Any] = []
             if t_start is not None:
                 sm_where.append("period_end >= %s")

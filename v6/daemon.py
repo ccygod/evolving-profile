@@ -264,8 +264,23 @@ def build_production_jobs(data_root: str | Path, *, bank_id: str | None = None) 
         "EVOLVING_PROFILE_SOURCE_API_URL": os.environ.get("EVOLVING_PROFILE_SOURCE_API_URL", "http://127.0.0.1:12088"),
         "PYTHONPATH": str(guidance_dir),
     }
+    pg_user = os.environ.get("PGUSER", "evolving_profile_admin")
+    pg_port = os.environ.get("PGPORT", "15432")
+    pg_db = os.environ.get("PGDATABASE", "evolving_profile")
+    default_pg_url = (
+        f"postgresql://{pg_user}@127.0.0.1:{pg_port}/{pg_db}"
+        if os.name == "nt"
+        else f"postgresql:///{pg_db}?port={pg_port}&user={pg_user}"
+    )
+    pg_url = (
+        os.environ.get("EVOLVING_PROFILE_API_DATABASE_URL")
+        or os.environ.get("EP_PG_URL")
+        or os.environ.get("DATABASE_URL")
+        or default_pg_url
+    )
     catalog_env = {
         "PYTHONPATH": f"{host_adapter}{path_sep}{guidance_dir}",
+        "EVOLVING_PROFILE_API_DATABASE_URL": pg_url,
     }
     topic_catalog_cmd = [
         py,
