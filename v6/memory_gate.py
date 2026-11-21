@@ -42,8 +42,16 @@ GENERIC_STOPWORDS = {
     "这个", "那个", "这些", "那些", "他们", "我们", "你们", "自己", "因为", "所以",
     "但是", "如果", "然后", "而且", "或者", "已经", "目前", "现在", "时候", "地方",
     "东西", "问题", "方法", "例子", "介绍", "一下", "一些", "关于", "对于", "以及",
+    "结果", "限制", "是否", "是不是", "有没有", "能不能", "看看", "一下", "出来", "里面",
     "the", "and", "for", "with", "that", "this", "from", "what", "how", "why", "are", "you",
 }
+
+# Domain-agnostic CJK function characters/particles that should not sit on the
+# leading/trailing edge of an n-gram lexical query term (prevents noisy sliding-window
+# fragments like '这是不', '的结果', '结果吗' from matching unrelated prose).
+_CJK_EDGE_STOPCHARS = set(
+    "的了么吗呢吧啊呀哦嗯是在有不这那把被给让从到为与和或也都就会要能可将对于中上下里来去过着"
+)
 
 L2_UNIVERSAL_PRINCIPLE = (
     "Memory Trigger Principle (User-Conditioned Variance): "
@@ -80,14 +88,25 @@ def extract_query_terms(prompt: str, *, max_terms: int = 12) -> list[str]:
             terms.append(tok)
 
     for seg in re.findall(r"[\u4e00-\u9fff]{2,}", text):
-        # Prefer 2-char and 3-char meaningful sub-chunks without hardcoding a dictionary
-        if 2 <= len(seg) <= 6 and seg not in GENERIC_STOPWORDS and seg not in seen:
+        # Prefer 2-char to 4-char content chunks without boundary function particles
+        if (
+            2 <= len(seg) <= 6
+            and seg not in GENERIC_STOPWORDS
+            and seg[0] not in _CJK_EDGE_STOPCHARS
+            and seg[-1] not in _CJK_EDGE_STOPCHARS
+            and seg not in seen
+        ):
             seen.add(seg)
             terms.append(seg)
-        for size in (3, 2):
+        for size in (4, 3, 2):
             for i in range(0, max(0, len(seg) - size + 1)):
                 sub = seg[i : i + size]
-                if sub not in GENERIC_STOPWORDS and sub not in seen:
+                if (
+                    sub not in GENERIC_STOPWORDS
+                    and sub[0] not in _CJK_EDGE_STOPCHARS
+                    and sub[-1] not in _CJK_EDGE_STOPCHARS
+                    and sub not in seen
+                ):
                     seen.add(sub)
                     terms.append(sub)
                     if len(terms) >= max_terms * 2:
@@ -294,38 +313,80 @@ def evaluate_l1_familiarity(
                 with conn.cursor() as cur:
                     cur.execute("SELECT to_regclass('ep_events.entity_state') IS NOT NULL")
                     if cur.fetchone()[0]:
-                        patterns = [f"%{t}%" for t in terms[:8]]
-                        cur.execute(
-                            """
-                            SELECT entity_type, entity_key, status, left(COALESCE(summary, ''), 100)
-                            FROM ep_events.entity_state
-                            WHERE valid_to IS NULL
-                              AND length(entity_key) >= 3
-                              AND (entity_key ILIKE ANY(%s) OR COALESCE(summary, '') ILIKE ANY(%s))
-                            ORDER BY (status = 'active') DESC, updated_at DESC
-                            LIMIT 3
-                            """,
-                            (patterns, patterns),
-                        )
+                        key_patterns = [f"%{t}%" for t in terms[:8]]
+                        # Only match long/specific terms against free-form prose summaries
+                        # to avoid high-frequency 2-3 char false positives.
+                        prose_terms = [
+                            t for t in terms[:8]
+                            if (len(t) >= 4 if any("\u4e00" <= c <= "\u9fff" for c in t) else len(t) >= 5)
+                        ]
+                        prose_patterns = [f"%{t}%" for t in prose_terms]
+                        if prose_patterns:
+                            cur.execute(
+                                """
+                                SELECT entity_type, entity_key, status, left(COALESCE(summary, ''), 100)
+                                FROM ep_events.entity_state
+                                WHERE valid_to IS NULL
+                                  AND length(entity_key) >= 3
+                                  AND (entity_key ILIKE ANY(%s) OR COALESCE(summary, '') ILIKE ANY(%s))
+                                ORDER BY (entity_key ILIKE ANY(%s)) DESC, (status = 'active') DESC, updated_at DESC
+                                LIMIT 3
+                                """,
+                                (key_patterns, prose_patterns, key_patterns),
+                            )
+                        else:
+                            cur.execute(
+                                """
+                                SELECT entity_type, entity_key, status, left(COALESCE(summary, ''), 100)
+                                FROM ep_events.entity_state
+                                WHERE valid_to IS NULL
+                                  AND length(entity_key) >= 3
+                                  AND entity_key ILIKE ANY(%s)
+                                ORDER BY (status = 'active') DESC, updated_at DESC
+                                LIMIT 3
+                                """,
+                                (key_patterns,),
+                            )
                         matched_entities = [
                             {"type": r[0], "key": r[1], "status": r[2], "summary": r[3]}
                             for r in cur.fetchall()
                         ]
 
-                    patterns = [f"%{t}%" for t in terms[:8]]
-                    cur.execute(
-                        """
-                        WITH primary_bank AS (
-                            SELECT bank_id FROM public.memory_units
-                            GROUP BY bank_id ORDER BY count(*) DESC LIMIT 1
+                    key_patterns = [f"%{t}%" for t in terms[:8]]
+                    prose_terms = [
+                        t for t in terms[:8]
+                        if (len(t) >= 4 if any("\u4e00" <= c <= "\u9fff" for c in t) else len(t) >= 5)
+                    ]
+                    prose_patterns = [f"%{t}%" for t in prose_terms]
+                    if prose_patterns:
+                        cur.execute(
+                            """
+                            WITH primary_bank AS (
+                                SELECT bank_id FROM public.memory_units
+                                GROUP BY bank_id ORDER BY count(*) DESC LIMIT 1
+                            )
+                            SELECT name FROM public.mental_models
+                            WHERE bank_id = (SELECT bank_id FROM primary_bank)
+                              AND (name ILIKE ANY(%s) OR content ILIKE ANY(%s))
+                            ORDER BY (name ILIKE ANY(%s)) DESC
+                            LIMIT 3
+                            """,
+                            (key_patterns, prose_patterns, key_patterns),
                         )
-                        SELECT name FROM public.mental_models
-                        WHERE bank_id = (SELECT bank_id FROM primary_bank)
-                          AND (name ILIKE ANY(%s) OR content ILIKE ANY(%s))
-                        LIMIT 3
-                        """,
-                        (patterns, patterns),
-                    )
+                    else:
+                        cur.execute(
+                            """
+                            WITH primary_bank AS (
+                                SELECT bank_id FROM public.memory_units
+                                GROUP BY bank_id ORDER BY count(*) DESC LIMIT 1
+                            )
+                            SELECT name FROM public.mental_models
+                            WHERE bank_id = (SELECT bank_id FROM primary_bank)
+                              AND name ILIKE ANY(%s)
+                            LIMIT 3
+                            """,
+                            (key_patterns,),
+                        )
                     matched_models = [str(r[0]).strip() for r in cur.fetchall() if r[0]]
             finally:
                 conn.close()
