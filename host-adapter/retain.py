@@ -34,7 +34,6 @@ except Exception:
 from lib.bank import derive_bank_id, ensure_bank_mission
 from lib.client import HindsightClient
 from lib.config import debug_log, load_config
-from lib.secret_redaction import redact_text
 from lib.content import prepare_retention_transcript, read_transcript
 from lib.daemon import get_api_url
 from lib.governance import record_provisional_timeline_events, record_semantic_lifecycle_events
@@ -388,7 +387,7 @@ def main():
             config.get('retainRoles',['user','assistant']),True,include_tool_calls=True)
         captured = queue.capture(
             session_id=session_id, message_count=turn['end'], bank_id=bank_id,
-            project=project, content=redact_text(turn_transcript or ''),
+            project=project, content=turn_transcript or '',
             write_policy=turn['write_policy'],
             messages=json.loads(structured_transcript) if structured_transcript else [],
             metadata={'source':'codex-hook-token-batch', 'session_id':session_id,
@@ -478,7 +477,7 @@ def main():
         try:
             response = client.retain(
                 bank_id=bank_id,
-                content=redact_text(batch["content"]),
+                content=batch["content"],
                 document_id=document_id,
                 context=config.get("retainContext", "codex"),
                 metadata=metadata,

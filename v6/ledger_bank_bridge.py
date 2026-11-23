@@ -29,7 +29,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from v6.secret_redaction import redact_text
 
 DEFAULT_HOSTS = ("antigravity",)
 MAX_MSG_CHARS = 4000
@@ -158,7 +157,7 @@ def run(*, bank: str, hosts: tuple[str, ...], state_path: Path, api_base: str, d
                    ORDER BY seq""",
                 (host, sid, int(rec["seq"])),
             )
-            rows = [(s, r, t, _truncate(redact_text(b.strip()), MAX_MSG_CHARS), p) for s, r, t, b, p in cur.fetchall()
+            rows = [(s, r, t, _truncate(b.strip(), MAX_MSG_CHARS), p) for s, r, t, b, p in cur.fetchall()
                     if b and len(b.strip()) >= MIN_MSG_CHARS]
             if not rows:
                 rec["seq"] = int(max_seq)

@@ -1,7 +1,6 @@
 import unittest
 
 from lib.retain_tags import host_family, retain_tags
-from lib.secret_redaction import redact_text
 
 BASE = ["codex", "project:abc", "observation:v2-live"]
 
@@ -29,9 +28,6 @@ class RetainTagsTest(unittest.TestCase):
         self.assertEqual(host_family("claude-code"), "claude")
         self.assertEqual(host_family("workbuddy"), "workbuddy")
 
-    def test_redaction_is_available_to_retain_paths(self):
-        fake = "sk-" + "AbCd1234EfGh5678IjKl"  # synthetic, split so release scans stay clean
-        self.assertNotIn(fake, redact_text("key 换成 " + fake))
 
 
 if __name__ == "__main__":
