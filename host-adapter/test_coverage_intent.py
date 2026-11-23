@@ -30,8 +30,18 @@ class CoverageIntentTest(unittest.TestCase):
         self.assertIsNotNone(detect("具身智能做过哪些工作，全部列出", NOW))
         self.assertIsNotNone(detect("上周和客户聊了哪些", NOW))
 
+    def test_locator_questions_route_to_session_inventory(self):
+        for text in ("之前涉及教师培训大纲是哪个对话来着", "用EP快速找一下之前做的教师和学生培训的大纲放哪了",
+                     "上次那个报价表放在哪了", "我们什么时候聊过 GB10 的采购"):
+            c = detect(text, NOW)
+            self.assertIsNotNone(c, text)
+            self.assertTrue(c["locator"], text)
+        text = instruction(detect("之前涉及教师培训大纲是哪个对话来着", NOW))
+        self.assertIn('"group_by": "session"', text)
+        self.assertIn("不要只给语义最相近的一个", text)
+
     def test_detect_ignores_self_contained_prompts(self):
-        for text in ("帮我翻译这句话", "今天天气怎么样", "把这个函数改一下", "这个月"):
+        for text in ("帮我翻译这句话", "今天天气怎么样", "把这个函数改一下", "这个月", "这个变量放哪个文件比较好"):
             self.assertIsNone(detect(text, NOW), text)
 
     def test_instruction_names_exhaustive_and_dates(self):

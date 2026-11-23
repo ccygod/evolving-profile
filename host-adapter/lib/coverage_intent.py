@@ -20,7 +20,16 @@ _CN_NUM = {"一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
            "十一": 11, "十二": 12, "半": 0}
 
 INVENTORY = re.compile(r"梳理|盘点|汇总|全部|所有|全量|查全|列出|罗列|回顾|复盘|时间线|做过哪些|做了哪些|做了什么|干了什么|都做了|都聊了|有哪些(工作|项目|会话|内容|事)|工作情况|周报|月报|日报")
-HISTORY = re.compile(r"做|工作|项目|会话|聊|讨论|处理|任务|进展|记录|内容|客户|方案|历史|写了|改了|修了")
+HISTORY = re.compile(r"做|工作|项目|会话|对话|聊|讨论|处理|任务|进展|记录|内容|客户|方案|历史|写了|改了|修了")
+# "Which conversation was X in / where did I put X": the answer is one or more
+# sessions, and Top-K recall routinely returns only the most similar one.
+LOCATOR = re.compile(
+    r"(哪个|哪一个|哪次|哪些|哪条)(对话|会话|聊天|窗口|线程|thread|session)"
+    r"|在哪(个|一个)?(对话|会话|窗口|宿主|agent|Agent)"
+    r"|(之前|以前|上次|原来|先前|早先)[^。？?!！\n]{0,24}(在哪|放哪|放在哪|存哪|哪里|哪儿|哪个|哪次)"
+    r"|(什么时候|哪天)[^。？?!！\n]{0,8}(聊|做|说|讨论|提|写|改)过"
+    r"|找(一下|找|到)?(之前|以前|上次)"
+)
 
 
 def _num(token: str) -> int | None:
@@ -121,13 +130,15 @@ def detect(text: str, now: dt.datetime | None = None) -> dict[str, Any] | None:
         return None
     inventory = bool(INVENTORY.search(t))
     history = bool(HISTORY.search(t))
+    locator = bool(LOCATOR.search(t))
     window = resolve_window(t, now)
-    if not ((window and (inventory or history)) or (inventory and history)):
+    if not ((window and (inventory or history)) or (inventory and history) or locator):
         return None
     return {
         "route": "exhaustive",
         "window": window,
         "inventory": inventory,
+        "locator": locator,
         "time_zone": "Asia/Shanghai",
     }
 
@@ -135,7 +146,12 @@ def detect(text: str, now: dt.datetime | None = None) -> dict[str, Any] | None:
 def instruction(contract: dict[str, Any]) -> str:
     w = contract.get("window") or {}
     args = {"group_by": "project"}
-    if w:
+    if contract.get("locator"):
+        # Locating a past conversation: list every matching session, not the best match.
+        args = {"group_by": "session", "keywords": ["<对象名>", "<别名>"], "sections": ["work_ledger", "summaries"], "group_limit": 40}
+        if w:
+            args.update({"start_date": w["start"], "end_date": w["end"]})
+    elif w:
         # A time-window inventory reads best as one titled row per session.
         args = {"group_by": "session", "start_date": w["start"], "end_date": w["end"], "group_limit": 60}
     import json
@@ -145,6 +161,8 @@ def instruction(contract: dict[str, Any]) -> str:
         + json.dumps(args, ensure_ascii=False)
         + "，可再按 host、week 或 project 分组），以 total_matched 与 groups 作为覆盖范围；items 不够时按 next_offset 翻页，或用 sections 只取需要的分区。"
         + window_text
+        + ("这是定位历史会话的问题：答案可能分布在多个宿主、多个会话里，把所有命中的会话按时间列出（宿主、日期、标题），不要只给语义最相近的一个；"
+           if contract.get("locator") else "")
         + ("" if w else "没有时间段时，把问题里的对象名、客户名、项目名及其别名作为 keywords 传入。")
         + "之后再用 user_recall/user_research 补细节，用 read_source 核对关键原文。user_recall/user_research 是语义 Top-K，不能单独作为“已查全”的依据；回答时写明覆盖的宿主、总数和未读页。"
     )

@@ -23,6 +23,11 @@ DEFAULT_BANK = os.environ.get("EVOLVING_PROFILE_BANK_ID", "")
 DEFAULT_LIMIT = 10
 SECTIONS = ("work_ledger", "memory_units", "summaries", "artifacts")
 _ITEM_TEXT = 200
+# Hard ceiling on one response.  Agents pass limit=200 and got 340K-char payloads
+# that their host spilled to a file; items are trimmed to fit and paging resumes
+# from each section's next_offset.
+DEFAULT_MAX_OUTPUT_CHARS = 24000
+MAX_OUTPUT_CHARS_CAP = 60000
 
 
 HOST_FAMILIES = {"claude": "claude", "claude-code": "claude", "claude-desktop": "claude", "claude-cli": "claude",
@@ -45,6 +50,43 @@ def _page(total: int, offset: int, returned: int, included: bool = True) -> dict
     nxt = offset + returned
     return {"total_matched": total, "returned": returned, "offset": offset,
             "has_more": nxt < total, "next_offset": nxt if nxt < total else None}
+
+
+def _summary_sessions(key: str | None) -> list[str]:
+    body = str(key or "").split(":", 1)[-1]
+    return [x for x in body.split(",") if x]
+
+
+def _size(obj: Any) -> int:
+    import json
+
+    return len(json.dumps(obj, ensure_ascii=False, default=str))
+
+
+def _fit_budget(result: dict[str, Any], offset: int, max_chars: int) -> dict[str, Any]:
+    """Trim items (largest section first), then groups, until the payload fits."""
+    trimmed: dict[str, int] = {}
+    if _size(result) <= max_chars:
+        return result
+    while _size(result) > max_chars:
+        candidates = [(sec, _size(result[sec]["items"])) for sec in SECTIONS if result[sec].get("items")]
+        if not candidates:
+            break
+        sec = max(candidates, key=lambda c: c[1])[0]
+        items = result[sec]["items"]
+        drop = max(1, len(items) // 4) if len(items) > 8 else 1
+        del items[-drop:]
+        trimmed[sec] = trimmed.get(sec, 0) + drop
+        page = _page(result[sec]["total_matched"], offset, len(items))
+        result[sec].update(page)
+    groups = result["work_ledger"].get("groups") or []
+    while groups and _size(result) > max_chars:
+        groups.pop()
+        result["work_ledger"]["groups_truncated"] = True
+        trimmed["work_ledger.groups"] = trimmed.get("work_ledger.groups", 0) + 1
+    result["budget"] = {"max_output_chars": max_chars, "trimmed": trimmed,
+                        "note": "输出超出字符预算，已截掉部分 items；total/groups_total 仍是全量。按各分区的 next_offset 加 sections 继续翻页。"}
+    return result
 
 
 def _connect():
@@ -113,6 +155,7 @@ def exhaustive_search(
     include_all_banks: bool = False,
     sections: list[str] | None = None,
     group_limit: int = 30,
+    max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS,
 ) -> dict[str, Any]:
     """Run an exhaustive SQL scan across memory_units, work_ledger, and summaries.
 
@@ -178,9 +221,14 @@ def exhaustive_search(
             wl_where.append(f"({_LEDGER_HOST_FAMILY_SQL}) = %s")
             wl_params.append(family)
         if project and project.strip():
-            wl_where.append("(COALESCE(w.project_key,'') ILIKE %s OR COALESCE(w.project_path,'') ILIKE %s)")
+            # Also match the canonical alias and the project named by the session summary (W4).
+            wl_where.append(
+                "(COALESCE(w.project_key,'') ILIKE %s OR COALESCE(w.project_path,'') ILIKE %s"
+                " OR EXISTS (SELECT 1 FROM ep_events.summaries s WHERE s.level = 'session'"
+                " AND s.key = w.host || ':' || w.session_id AND array_to_string(s.project_keys, ',') ILIKE %s))"
+            )
             plike = f"%{project.strip()}%"
-            wl_params.extend([plike, plike])
+            wl_params.extend([plike, plike, plike])
         kw_sql, kw_params = _keyword_clause(
             ["w.user_request", "w.final_answer", "w.project_key", "w.summary_line"], kw_list, match_mode=match_mode
         )
@@ -188,15 +236,22 @@ def exhaustive_search(
             wl_where.append(kw_sql)
             wl_params.extend(kw_params)
 
+        # W4: when the ledger has no project (no cwd, e.g. Antigravity), fall back to
+        # the project the session summary names.
+        sm_join = (
+            "LEFT JOIN LATERAL (SELECT s.project_keys[1] AS project FROM ep_events.summaries s "
+            "WHERE s.level = 'session' AND s.key = w.host || ':' || w.session_id "
+            "AND s.status IN ('ok','active','rebuilt') LIMIT 1) smp ON true"
+        )
         wl_join = (
-            "LEFT JOIN ep_events.project_aliases pa ON pa.raw_project_key = w.project_key"
+            "LEFT JOIN ep_events.project_aliases pa ON pa.raw_project_key = w.project_key " + sm_join
             if has_proj_alias
-            else ""
+            else sm_join
         )
         proj_col = (
-            "COALESCE(NULLIF(pa.canonical_project, ''), NULLIF(w.project_key, ''), NULLIF(w.project_path, ''), '(未归类项目)')"
+            "COALESCE(NULLIF(pa.canonical_project, ''), NULLIF(w.project_key, ''), NULLIF(smp.project, ''), NULLIF(w.project_path, ''), '(未归类项目)')"
             if has_proj_alias
-            else "COALESCE(NULLIF(w.project_key, ''), NULLIF(w.project_path, ''), '(未归类项目)')"
+            else "COALESCE(NULLIF(w.project_key, ''), NULLIF(smp.project, ''), NULLIF(w.project_path, ''), '(未归类项目)')"
         )
         wl_cond = " AND ".join(wl_where)
         cur.execute(f"SELECT COUNT(*) FROM ep_events.work_ledger w WHERE {wl_cond}", wl_params)
@@ -404,8 +459,22 @@ def exhaustive_search(
             if project and project.strip():
                 sm_where.append("array_to_string(project_keys, ',') ILIKE %s")
                 sm_params.append(f"%{project.strip()}%")
-            cur.execute(f"SELECT COUNT(*) FROM ep_events.summaries WHERE {' AND '.join(sm_where)}", sm_params)
-            summaries_total = int(cur.fetchone()[0])
+            if kw_list or family:
+                # Summaries have no text column; keep the ones whose sessions the
+                # keyword/host-filtered ledger actually matched.
+                sm_where.append(
+                    f"EXISTS (SELECT 1 FROM ep_events.work_ledger w {wl_join} WHERE {wl_cond} "
+                    "AND position(w.session_id in ep_events.summaries.key) > 0)"
+                )
+                sm_params.extend(wl_params)
+            cur.execute(f"SELECT key FROM ep_events.summaries WHERE {' AND '.join(sm_where)}", sm_params)
+            all_keys = [r[0] for r in cur.fetchall()]
+            summaries_total = len(all_keys)
+            # R6: legacy summaries key several sessions together ("claude-desktop:a,b,c")
+            # and the same session may also have its own summary; count sessions, not rows.
+            single = {_summary_sessions(k)[0] for k in all_keys if len(_summary_sessions(k)) == 1}
+            summary_sessions = {sid for k in all_keys for sid in _summary_sessions(k)}
+            multi_keys = [k for k in all_keys if len(_summary_sessions(k)) > 1]
             cur.execute(
                 f"""
                 SELECT level, key, path,
@@ -419,17 +488,22 @@ def exhaustive_search(
                 """,
                 sm_params + [limit if "summaries" in wanted else 0, offset],
             )
-            summaries = [
-                {
+            summaries = []
+            for r in cur.fetchall():
+                sids = _summary_sessions(r[1])
+                item = {
                     "level": r[0],
                     "key": r[1],
                     "path": r[2],
                     "period_start": r[3],
                     "period_end": r[4],
                     "project_keys": r[5],
+                    "sessions": sids,
                 }
-                for r in cur.fetchall()
-            ]
+                if len(sids) > 1:
+                    item["multi_session"] = True
+                    item["superseded_by_single_session_summaries"] = all(x in single for x in sids)
+                summaries.append(item)
 
         artifacts_items = []
         artifacts_total = 0
@@ -479,7 +553,7 @@ def exhaustive_search(
                 for r in cur.fetchall()
             ]
 
-        return {
+        result = {
             "schema": "evolving-profile.exhaustive-search.v2",
             "mode": "exhaustive_sql_scan",
             "match_mode": match_mode,
@@ -523,6 +597,8 @@ def exhaustive_search(
             "summaries": {
                 **_page(summaries_total, offset, len(summaries), "summaries" in wanted),
                 "matched_count": summaries_total,
+                "distinct_sessions": len(summary_sessions) if include_summaries else 0,
+                "multi_session_summaries": len(multi_keys) if include_summaries else 0,
                 "items": summaries,
             },
             "artifacts": {
@@ -531,5 +607,7 @@ def exhaustive_search(
             },
             "paging_note": "total/groups 覆盖全量；items 只是第 offset 页。需要更多时用相同条件加 offset=next_offset，并用 sections 只取需要的分区。",
         }
+        budget = max(4000, min(int(max_output_chars or DEFAULT_MAX_OUTPUT_CHARS), MAX_OUTPUT_CHARS_CAP))
+        return _fit_budget(result, offset, budget)
     finally:
         conn.close()

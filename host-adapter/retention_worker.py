@@ -7,6 +7,8 @@ is the only condition that removes raw queue records.
 """
 import argparse
 from lib import platform_lock as fcntl
+from lib.secret_redaction import redact_text
+from lib.retain_tags import retain_tags
 import hashlib
 import json
 import os
@@ -125,11 +127,11 @@ def run_once(config,root):
         return s
     _rows=batch.get('items') or locals().get('chosen') or []
     _origin=','.join(sorted({str((r.get('metadata') or {}).get('origin_agent') or 'codex') for r in _rows})) or 'codex'
-    item={'content':batch['content'],'document_id':'codex-batch-'+batch['batch_id'],
+    item={'content':redact_text(batch['content']),'document_id':'codex-batch-'+batch['batch_id'],
           'context':config.get('retainContext','codex'),
           'metadata':{'source':'codex-hook-token-batch','origin_agent':_origin,'project':batch['project'],'session_ids':vars['session_id'],'retained_at':vars['timestamp'],'estimated_tokens':str(batch.get('estimated_tokens',0)),
                       **{k:expand(v) for k,v in config.get('retainMetadata',{}).items()}, **submission_metadata(batch)},
-          'tags':[expand(t) for t in config.get('retainTags',[])],
+          'tags':retain_tags([expand(t) for t in config.get('retainTags',[])],_origin),
           'observation_scopes':config.get('retainObservationScopes','shared')}
     if config.get('retainStrategy'):item['strategy']=config['retainStrategy']
     try:

@@ -934,6 +934,7 @@ EXHAUSTIVE_SEARCH_TOOL = {
             "include_summaries": {"type": "boolean", "default": True},
             "sections": {"type": "array", "items": {"type": "string", "enum": ["work_ledger", "memory_units", "summaries", "artifacts"]}, "description": "只返回这些分区的 items（总数仍全部计算）；默认全部。"},
             "group_limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 30, "description": "work_ledger 分组最多返回多少组；groups_total 给出全部组数。"},
+            "max_output_chars": {"type": "integer", "minimum": 4000, "maximum": 60000, "default": 24000, "description": "单次返回的字符上限；超出时截掉部分 items 并给出各分区 next_offset，total 仍为全量。"},
             "match_mode": {"type": "string", "enum": ["any", "all"], "default": "any", "description": "多个关键词：any=任一命中，all=全部命中。"},
             "include_all_banks": {"type": "boolean", "default": False, "description": "默认只查主库；true 时把旧归档库（豆包/千问等）也算进来，可能重复计数。"},
             "check_id": {"type": "string", "description": "当前 Hook 给出的 check_id。"},
@@ -2471,6 +2472,7 @@ for line in (sys.stdin if __name__ == "__main__" else ()):
                     include_all_banks=bool(args.get('include_all_banks', False)),
                     sections=args.get('sections') or None,
                     group_limit=int(args.get('group_limit') or 30),
+                    max_output_chars=int(args.get('max_output_chars') or 24000),
                 )
                 reply(message_id, {'content':[{'type':'text','text':json.dumps(value,ensure_ascii=False)}], 'isError':False})
             elif params.get('name') == 'rag_search':

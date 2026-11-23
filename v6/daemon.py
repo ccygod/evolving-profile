@@ -220,15 +220,17 @@ def _run_events_sync_py(py: str, root: Path) -> dict[str, Any]:
             _run_cmd([py, str(ev_dir / "replay.py"), "--adapter", adapter, "--since", since, "--batch-id", f"{batch}-{adapter}"], timeout=300)
         except Exception as exc:
             errors.append(f"{adapter}:{exc}")
-    for script, extra in (
-        ("ledger.py", ["--since", since]),
-        ("entity_state.py", []),
-        ("summarize.py", ["--level", "session", "--since", since]),
+    # Session summaries call the model per changed session; a busy day of long
+    # Antigravity sessions exceeded 600 s four times on 11-22/23, so it gets more room.
+    for script, extra, limit in (
+        ("ledger.py", ["--since", since], 600),
+        ("entity_state.py", [], 600),
+        ("summarize.py", ["--level", "session", "--since", since], 2400),
     ):
         sp = ev_dir / script
         if sp.exists():
             try:
-                _run_cmd([py, str(sp), *extra], timeout=600)
+                _run_cmd([py, str(sp), *extra], timeout=limit)
             except Exception as exc:
                 errors.append(f"{script}:{exc}")
     if errors:
