@@ -589,6 +589,7 @@ the same configuration.** Verify the effective profile before claiming changes a
 
 ## Reliability, privacy and limits
 
+- **Single user, own machine only.** EP is designed for one person on their own computer: services listen on `127.0.0.1`, local maintenance jobs connect to the database without a password, and background jobs use the database superuser. It is not hardened for machines shared by several users or for exposure to a network; do not deploy it that way.
 - Memory candidates, scenario summaries and process patterns are not verified
   external facts. Assistant completion statements retain their evidence level.
 - Tool invocation and returned content do not prove final-answer adoption.
