@@ -146,11 +146,20 @@ def build_request(hook_input: dict, prompt: str, context_ref: str, *, memory_pol
         "max_tokens": MAX_TOKENS,
         "max_candidates": configured_candidate_limit(),
         "entry_adapter": True,
-        # The Hook is the production entry path.  Keep command-line evaluation
-        # deterministic unless it explicitly opts in, while every submitted
-        # user prompt gets semantic candidate discovery with safe fallback.
-        "semantic_recall": "local",
+        # Production entry: same semantic mode as the MCP user_preference tool
+        # (mcp_runtime.preference_semantic_mode), so both paths agree.
+        "semantic_recall": _production_semantic_mode(),
     }
+
+
+def _production_semantic_mode() -> str:
+    if str(GUIDANCE_SRC) not in sys.path:
+        sys.path.insert(0, str(GUIDANCE_SRC))
+    try:
+        from mcp_runtime import preference_semantic_mode
+        return preference_semantic_mode()
+    except Exception:
+        return "local"
 
 
 def _call_preference(request: dict) -> dict:

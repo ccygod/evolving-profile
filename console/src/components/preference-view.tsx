@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
 import { ActionButton } from "@/components/ui/action-button";
 import { Constellation } from "@/components/constellation";
+import { Calendar, List, Network, PencilLine, ScatterChart } from "lucide-react";
 import { Graph2D, type GraphNode } from "@/components/graph-2d";
 import {
   buildPreferenceGraph,
@@ -248,74 +249,61 @@ export function PreferenceView() {
       )}
 
       <div className="flex flex-wrap gap-2 border-b border-border pb-3">
-        <button
-          onClick={() => {
-            setSelection("all");
-            setSelectedNode(null);
-          }}
-          className={`rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
-            selection === "all" ? "bg-muted" : "hover:bg-muted/60"
-          }`}
-          style={{ borderColor: "#475569" }}
-        >
-          {copy.all} <span className="ml-1 opacity-70">{visibleAllUnits.length + visibleModelCount}</span>
-        </button>
-        {DIMENSIONS.map((dimension) => (
-          <button
-            key={dimension}
-            onClick={() => {
-              setSelection(dimension);
-              setSelectedNode(null);
-            }}
-            className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-              selection === dimension ? "bg-muted" : "hover:bg-muted/60"
-            }`}
-            style={{ borderColor: preferenceDimensionColor(dimension) }}
-          >
-            {preferenceDimensionLabel(dimension, language)} <span className="ml-1 opacity-70">{countByDimension[dimension]}</span>
-          </button>
-        ))}
-        <button
-          onClick={() => {
-            setSelection("fusion");
-            setLifecycle("approved");
-            setSelectedNode(null);
-          }}
-          className={`rounded-md border-2 px-3 py-2 text-sm font-semibold transition-colors ${
-            selection === "fusion" ? "bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-50" : "hover:bg-amber-50/60"
-          }`}
-          style={{ borderColor: FUSION_COLOR }}
-        >
-          {copy.fusion} <span className="ml-1 opacity-70">{models.length}</span>
-        </button>
+        {([
+          { key: "all" as const, label: copy.all, color: "#475569", count: visibleAllUnits.length + visibleModelCount },
+          ...DIMENSIONS.map((dimension) => ({ key: dimension, label: preferenceDimensionLabel(dimension, language), color: preferenceDimensionColor(dimension), count: countByDimension[dimension] })),
+          { key: "fusion" as const, label: copy.fusion, color: FUSION_COLOR, count: models.length },
+        ]).map((chip) => {
+          const active = selection === chip.key;
+          return (
+            <button
+              key={chip.key}
+              type="button"
+              onClick={() => {
+                setSelection(chip.key);
+                if (chip.key === "fusion") setLifecycle("approved");
+                setSelectedNode(null);
+              }}
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                active ? "text-foreground" : "border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              }`}
+              style={active ? { borderColor: chip.color, backgroundColor: `${chip.color}14`, color: chip.color } : undefined}
+            >
+              {chip.key !== "all" && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: chip.color }} />}
+              {chip.label}
+              <span className="tabular-nums opacity-70">{chip.count}</span>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label={copy.title}>
+      <div className="flex w-fit flex-wrap items-center gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label={copy.title}>
         {([
-          ["constellation", copy.constellation],
-          ["graph", copy.graph],
-          ["table", copy.table],
-          ["timeline", copy.timeline],
-          ["review", `${copy.manualCorrection}${reviewRecommendations.length ? ` ${reviewRecommendations.length}` : ""}`],
-        ] as const).map(([mode, label]) => (
+          ["constellation", copy.constellation, ScatterChart],
+          ["graph", copy.graph, Network],
+          ["table", copy.table, List],
+          ["timeline", copy.timeline, Calendar],
+          ["review", `${copy.manualCorrection}${reviewRecommendations.length ? ` ${reviewRecommendations.length}` : ""}`, PencilLine],
+        ] as const).map(([mode, label, Icon]) => (
           <button
             key={mode}
             type="button"
             role="tab"
             aria-selected={viewMode === mode}
             onClick={() => setViewMode(mode)}
-            className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${viewMode === mode ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${viewMode === mode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
           >
+            <Icon className="h-4 w-4" />
             {label}
           </button>
         ))}
       </div>
 
-      {loading && <div className="rounded-lg border p-6 text-sm text-muted-foreground">{copy.loading}</div>}
+      {loading && <div className="rounded-lg border border-border p-6 text-sm text-muted-foreground">{copy.loading}</div>}
       {error && <div className="rounded-lg border border-destructive/40 p-6 text-sm text-destructive">{error}</div>}
       {!loading && !error && (
         <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-w-0 overflow-hidden rounded-lg border bg-background">
+          <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-background">
             {viewMode === "review" && (
               <div className="grid min-h-[680px] gap-4 p-4 lg:grid-cols-2">
                 <section className="min-w-0 rounded-lg border border-amber-300 bg-amber-50/50 p-4 dark:bg-amber-950/20" aria-label={copy.reviewRecommendations}>
@@ -323,9 +311,9 @@ export function PreferenceView() {
                   <div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1">{reviewRecommendations.map((item: any) => <button key={item.unit.id} type="button" className="w-full rounded-md border border-amber-200 bg-background/80 p-3 text-left hover:border-amber-400" onClick={() => startEdit(item.unit)}><div className="flex items-start justify-between gap-3"><span className="line-clamp-3 text-sm font-medium">{item.unit.text}</span><span className={`shrink-0 rounded px-2 py-0.5 text-[10px] ${item.severity === inlineUiText("高") ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"}`}>{item.severity} · {copy.editNow}</span></div><p className="mt-1 text-xs text-muted-foreground">{item.reasons.join(" · ")} · {copy.recommendationImpact}</p></button>)}</div>
                   {!reviewRecommendations.length && <p className="mt-4 text-sm text-muted-foreground">{copy.noRecommendations}</p>}
                 </section>
-                <section className="min-w-0 rounded-lg border p-4" aria-label={copy.otherRecords}>
-                  <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-semibold">{copy.otherRecords}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{inlineUiText("点击任意条目后，在右侧详情中进入手动修正。")}</p></div><span className="rounded-full border px-2 py-1 text-xs">{units.length - reviewRecommendations.length}</span></div>
-                  <div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1">{otherReviewUnits.map((unit) => <button key={unit.id} type="button" className="w-full rounded-md border p-3 text-left hover:border-primary" onClick={() => startEdit(unit)}><div className="flex items-start justify-between gap-3"><span className="line-clamp-2 text-sm">{unit.text}</span><span className="shrink-0 rounded border px-2 py-0.5 text-[10px]">{copy.editNow}</span></div><p className="mt-1 text-xs text-muted-foreground">{preferenceDimensionLabel(unit.primary_category, language)} · {unit.preference_audit?.state === "approved" ? copy.approved : unit.preference_audit?.state ?? "—"}</p></button>)}</div>
+                <section className="min-w-0 rounded-lg border border-border p-4" aria-label={copy.otherRecords}>
+                  <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-semibold">{copy.otherRecords}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{inlineUiText("点击任意条目后，在右侧详情中进入手动修正。")}</p></div><span className="rounded-full border border-border px-2 py-1 text-xs">{units.length - reviewRecommendations.length}</span></div>
+                  <div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1">{otherReviewUnits.map((unit) => <button key={unit.id} type="button" className="w-full rounded-md border p-3 text-left hover:border-primary" onClick={() => startEdit(unit)}><div className="flex items-start justify-between gap-3"><span className="line-clamp-2 text-sm">{unit.text}</span><span className="shrink-0 rounded border border-border px-2 py-0.5 text-[10px]">{copy.editNow}</span></div><p className="mt-1 text-xs text-muted-foreground">{preferenceDimensionLabel(unit.primary_category, language)} · {unit.preference_audit?.state === "approved" ? copy.approved : unit.preference_audit?.state ?? "—"}</p></button>)}</div>
                 </section>
               </div>
             )}
@@ -335,21 +323,24 @@ export function PreferenceView() {
                 height={680}
                 nodeColorFn={(node) => node.color ?? "#64748b"}
                 nodeSizeFn={(node) => {
-                  if (node.id === "fusion-center") return 16;
-                  if (node.metadata?.kind === "model") return 10;
+                  if (node.id === "fusion-center") return 7;
+                  if (node.metadata?.kind === "dimension") return 5.5;
+                  if (node.metadata?.kind === "model") return 4;
                   const unit = node.metadata?.unit as PreferenceUnit | undefined;
-                  if (unit?.enforcement === "hard_guardrail") return 7.5;
-                  if (unit?.scope_level === "task_local" || unit?.scope === "task_local") return 3.5;
-                  return 5;
+                  if (unit?.enforcement === "hard_guardrail") return 3.5;
+                  if (unit?.scope_level === "task_local" || unit?.scope === "task_local") return 2.5;
+                  return 3;
                 }}
+                nodeOpacity={0.85}
                 preserveNodeColor
                 linkColorFn={(link) => link.color ?? "#64748b"}
-                linkOpacity={0.18}
-                linkWidth={0.7}
-                clusterKeyFn={(node) => (selection === "all" || selection === "fusion" ? node.group ?? null : null)}
+                clusterStyle="orbit"
+                clusterKeyFn={selection === "all" ? (node) => node.group ?? null : undefined}
+                clusterAnchorFn={(node) => node.id === "fusion-center" || node.metadata?.kind === "dimension"}
                 clusterColorFn={(group) => group === "fusion" ? FUSION_COLOR : preferenceDimensionColor(group as PreferenceDimension)}
-                clusterLabelFn={(group) => group === "fusion" ? copy.fusion + " " + models.length : preferenceDimensionLabel(group as PreferenceDimension, language) + " " + countByDimension[group as PreferenceDimension]}
-                centerClusterKey={selection === "all" ? "fusion" : undefined}
+                clusterLabelFn={(group) => group === "fusion" ? copy.fusion + " · " + models.length : preferenceDimensionLabel(group as PreferenceDimension, language) + " · " + countByDimension[group as PreferenceDimension]}
+                centerClusterKey="fusion"
+                legendItems={[]}
                 onNodeClick={setSelectedNode}
               />
             )}
@@ -376,7 +367,7 @@ export function PreferenceView() {
                       <tr key={`${row.kind}:${row.id}`} className="cursor-pointer hover:bg-muted/60" onClick={() => selectRow(row)}>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">{row.kind === "model" ? copy.model : preferenceDimensionLabel(row.unit.primary_category, language)}</td>
                         <td className="max-w-[480px] px-4 py-3 leading-6"><span data-i18n-ignore="true" className="line-clamp-2">{row.title}</span></td>
-                        <td className="px-4 py-3 text-xs"><span className="rounded border px-2 py-1">{row.lifecycle === "approved" ? copy.approved : row.lifecycle === "active" ? copy.active : row.lifecycle === "needs_review" ? copy.pending : row.lifecycle === "superseded" ? copy.superseded : row.lifecycle}</span></td>
+                        <td className="px-4 py-3 text-xs"><span className="rounded border border-border px-2 py-1">{row.lifecycle === "approved" ? copy.approved : row.lifecycle === "active" ? copy.active : row.lifecycle === "needs_review" ? copy.pending : row.lifecycle === "superseded" ? copy.superseded : row.lifecycle}</span></td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">{eventTime(row.at)}</td>
                       </tr>
                     ))}
@@ -389,7 +380,7 @@ export function PreferenceView() {
               <ol className="max-h-[680px] divide-y divide-border overflow-auto">
                 {timelineEvents.map((event) => (
                   <li key={`${event.kind}:${event.id}`} className="cursor-pointer px-5 py-4 hover:bg-muted/60" onClick={() => selectRow(event)}>
-                    <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{eventTime(event.at)}</span><span className="rounded border px-2 py-1 text-xs">{event.kind === "model" ? copy.model : event.lifecycle === "approved" ? copy.approved : copy.pending}</span></div>
+                    <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{eventTime(event.at)}</span><span className="rounded border border-border px-2 py-1 text-xs">{event.kind === "model" ? copy.model : event.lifecycle === "approved" ? copy.approved : copy.pending}</span></div>
                     <p className="mt-2 leading-6">{event.title}</p>
                   </li>
                 ))}
@@ -397,7 +388,7 @@ export function PreferenceView() {
               </ol>
             )}
           </div>
-          <aside className="min-w-0 rounded-lg border bg-background p-4">
+          <aside className="min-w-0 rounded-lg border border-border bg-background p-4">
             <section className="border-b border-border pb-3">
               <h3 className="text-sm font-semibold">{copy.colors}</h3>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy.currentView} {selectionLabel}</p>
@@ -446,7 +437,7 @@ export function PreferenceView() {
                 {selectedModel.purpose && <p className="leading-6">{selectedModel.purpose}</p>}
                 <p className="leading-6">{selectedModel.mechanism ?? selectedModel.sections?.[0]?.text ?? copy.noMechanism}</p>
                 <div className="flex flex-wrap gap-1.5 text-xs">
-                  {selectedModel.dimensions.map((dimension) => <span key={dimension} className="rounded border px-2 py-1" style={{ borderColor: preferenceDimensionColor(dimension), color: preferenceDimensionColor(dimension) }}>{preferenceDimensionLabel(dimension, language)}</span>)}
+                  {selectedModel.dimensions.map((dimension) => <span key={dimension} className="rounded border border-border px-2 py-1" style={{ borderColor: preferenceDimensionColor(dimension), color: preferenceDimensionColor(dimension) }}>{preferenceDimensionLabel(dimension, language)}</span>)}
                 </div>
                 {selectedModel.sections?.map((section, index) => (
                   <div key={index} className="space-y-1 border-l-2 pl-3" style={{ borderColor: FUSION_COLOR }}>
@@ -465,7 +456,7 @@ export function PreferenceView() {
           </aside>
         </div>
       )}
-      {editingUnit && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label={inlineUiText("手动修正偏好")}><div className="w-full max-w-2xl rounded-xl border bg-background p-5 shadow-2xl"><div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">{inlineUiText("手动修正")}</h3><p className="mt-1 text-xs text-muted-foreground">{inlineUiText("保存后会生成新版本，保留原始来源和历史记录，不直接覆盖原文。")}</p></div><button type="button" className="rounded border px-2 py-1 text-sm" onClick={() => setEditingUnit(null)}>{inlineUiText("关闭")}</button></div><div className="mt-4 space-y-3"><label className="block text-sm font-medium">{inlineUiText("偏好内容")}<textarea className="mt-1 min-h-28 w-full rounded-md border bg-background p-3 text-sm" value={editText} onChange={(event) => setEditText(event.target.value)} /></label><div className="grid gap-3 md:grid-cols-2"><label className="block text-sm font-medium">{inlineUiText("适用条件（每行一条）")}<textarea className="mt-1 min-h-24 w-full rounded-md border bg-background p-3 text-sm" value={editApplies} onChange={(event) => setEditApplies(event.target.value)} /></label><label className="block text-sm font-medium">{inlineUiText("例外条件（每行一条）")}<textarea className="mt-1 min-h-24 w-full rounded-md border bg-background p-3 text-sm" value={editExceptions} onChange={(event) => setEditExceptions(event.target.value)} /></label></div><label className="block text-sm font-medium">{inlineUiText("修正说明")}<input className="mt-1 w-full rounded-md border bg-background p-2 text-sm" value={editReason} onChange={(event) => setEditReason(event.target.value)} placeholder={inlineUiText("例如：原条目把一次性项目要求误提炼成全局偏好")} /></label>{editError && <p className="rounded border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive">{editError}</p>}</div><div className="mt-5 flex justify-end gap-2"><button type="button" className="rounded border px-3 py-2 text-sm" onClick={() => setEditingUnit(null)}>{inlineUiText("取消")}</button><ActionButton resetKey={JSON.stringify([editingUnit.id, editText, editApplies, editExceptions, editReason])} disabled={editSaving || !editText.trim()} className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50" onAction={saveEdit}>{inlineUiText("保存修正")}</ActionButton></div></div></div>}
+      {editingUnit && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label={inlineUiText("手动修正偏好")}><div className="w-full max-w-2xl rounded-xl border border-border bg-background p-5 shadow-2xl"><div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">{inlineUiText("手动修正")}</h3><p className="mt-1 text-xs text-muted-foreground">{inlineUiText("保存后会生成新版本，保留原始来源和历史记录，不直接覆盖原文。")}</p></div><button type="button" className="rounded border border-border px-2 py-1 text-sm" onClick={() => setEditingUnit(null)}>{inlineUiText("关闭")}</button></div><div className="mt-4 space-y-3"><label className="block text-sm font-medium">{inlineUiText("偏好内容")}<textarea className="mt-1 min-h-28 w-full rounded-md border border-border bg-background p-3 text-sm" value={editText} onChange={(event) => setEditText(event.target.value)} /></label><div className="grid gap-3 md:grid-cols-2"><label className="block text-sm font-medium">{inlineUiText("适用条件（每行一条）")}<textarea className="mt-1 min-h-24 w-full rounded-md border border-border bg-background p-3 text-sm" value={editApplies} onChange={(event) => setEditApplies(event.target.value)} /></label><label className="block text-sm font-medium">{inlineUiText("例外条件（每行一条）")}<textarea className="mt-1 min-h-24 w-full rounded-md border border-border bg-background p-3 text-sm" value={editExceptions} onChange={(event) => setEditExceptions(event.target.value)} /></label></div><label className="block text-sm font-medium">{inlineUiText("修正说明")}<input className="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm" value={editReason} onChange={(event) => setEditReason(event.target.value)} placeholder={inlineUiText("例如：原条目把一次性项目要求误提炼成全局偏好")} /></label>{editError && <p className="rounded border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive">{editError}</p>}</div><div className="mt-5 flex justify-end gap-2"><button type="button" className="rounded border border-border px-3 py-2 text-sm" onClick={() => setEditingUnit(null)}>{inlineUiText("取消")}</button><ActionButton resetKey={JSON.stringify([editingUnit.id, editText, editApplies, editExceptions, editReason])} disabled={editSaving || !editText.trim()} className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50" onAction={saveEdit}>{inlineUiText("保存修正")}</ActionButton></div></div></div>}
     </section>
   );
 }

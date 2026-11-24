@@ -393,7 +393,10 @@ async def _restore(
 
                 # Refresh materialized view
                 typer.echo("  Refreshing materialized views...")
-                await conn.execute(f"REFRESH MATERIALIZED VIEW {_fq_table('memory_units_bm25', schema)}")
+                # memory_units_bm25 was dropped on 2026-11-24 (213 MB, never queried:
+                # retrieval uses memory_units.search_vector / search_vector_cjk_v1).
+                if await conn.fetchval("SELECT to_regclass($1) IS NOT NULL", _fq_table('memory_units_bm25', schema)):
+                    await conn.execute(f"REFRESH MATERIALIZED VIEW {_fq_table('memory_units_bm25', schema)}")
 
         return manifest
     finally:

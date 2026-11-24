@@ -17,6 +17,9 @@ import json
 import os
 import re
 import sqlite3
+import time
+import uuid
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -174,9 +177,32 @@ def dedupe_and_enrich_guidance(sqlite_path: str | Path, *, dry_run: bool = False
             if changed:
                 stats["units_enriched"] += 1
                 if not dry_run:
+                    # Never edit an active revision in place (the guidance store
+                    # rejects it): write the enriched payload as a new revision,
+                    # carry the unit audit over, and move active_revision.
+                    if not isinstance(data.get("scope"), dict):
+                        stats.setdefault("skipped_non_dict_scope", []).append(unit_id)
+                        continue
+                    new_rev = "sha256:" + hashlib.sha256(
+                        (json.dumps(data, sort_keys=True, ensure_ascii=False) + uuid.uuid4().hex).encode()
+                    ).hexdigest()
+                    data["revision"] = new_rev
+                    data["hygiene_enrichment"] = {"base_revision": rev, "at": time.time()}
+                    now = time.time()
+                    cur.execute("UPDATE unit_revisions SET active = 0 WHERE unit_id = ? AND revision = ?", (unit_id, rev))
                     cur.execute(
-                        "UPDATE unit_revisions SET payload_json = ? WHERE unit_id = ? AND revision = ?",
-                        (json.dumps(data, ensure_ascii=False), unit_id, rev),
+                        "INSERT INTO unit_revisions(unit_id,revision,publication_id,payload_json,active,created_at) VALUES(?,?,?,?,1,?)",
+                        (unit_id, new_rev, "ontology-hygiene:" + uuid.uuid4().hex, json.dumps(data, ensure_ascii=False), now),
+                    )
+                    audit = cur.execute(
+                        "SELECT state,scope_level,validity_kind,reason,checked_at,superseded_by,audit_json FROM unit_audits WHERE unit_id = ? AND revision = ?",
+                        (unit_id, rev),
+                    ).fetchone()
+                    if audit:
+                        cur.execute("INSERT INTO unit_audits VALUES(?,?,?,?,?,?,?,?,?)", (unit_id, new_rev, *audit))
+                    cur.execute(
+                        "INSERT INTO meta(key,value) VALUES('active_revision',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (new_rev,),
                     )
 
         if not dry_run:

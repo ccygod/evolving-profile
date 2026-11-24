@@ -641,6 +641,15 @@ def allow_shadow_fixture_transcript(transcript_path: str) -> bool:
 def persist_hook_state(name: str, value: dict) -> None:
     """Persist production state or an isolated replay receipt."""
     if not is_shadow_replay():
+        if name.startswith("last_recall"):
+            # Reference-only trace (ids/scores/short previews); full detail only for
+            # the newest 3 recalls per session (gzip ring) or degraded recalls.
+            try:
+                from lib import trace_slim
+                from lib.state import _state_dir
+                value = trace_slim.prepare_recall_state(name, value, _state_dir())
+            except Exception:
+                pass
         write_state(name, value)
         return
     try:

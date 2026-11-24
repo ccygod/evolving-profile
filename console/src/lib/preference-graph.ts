@@ -44,7 +44,7 @@ export type FusionModel = {
   }>;
 };
 
-export const FUSION_MODEL_COLOR = "#c026d3";
+export const FUSION_MODEL_COLOR = "#8b5cf6";
 
 const DIMENSIONS: PreferenceDimension[] = [
   "communication",
@@ -55,11 +55,11 @@ const DIMENSIONS: PreferenceDimension[] = [
 ];
 
 const COLORS: Record<PreferenceDimension, string> = {
-  communication: "#0891b2",
-  learning: "#7c3aed",
-  reasoning: "#d97706",
-  collaboration: "#059669",
-  delivery: "#e11d48",
+  communication: "#009296",
+  learning: "#3882dc",
+  reasoning: "#e0a030",
+  collaboration: "#4aa37c",
+  delivery: "#f0643c",
 };
 
 const LABELS: Record<PreferenceLocale, Record<PreferenceDimension, string>> = {
@@ -166,7 +166,7 @@ export function buildPreferenceGraph(
         { source: "fusion-center", target: modelId, type: "fusion", color: FUSION_MODEL_COLOR, width: 2 },
         ...refs
           .filter((id) => units.some((unit) => unit.id === id))
-          .map((id) => ({ source: modelId, target: id, type: "reference", color: "#f59e0b" })),
+          .map((id) => ({ source: modelId, target: id, type: "reference", color: FUSION_MODEL_COLOR })),
       ];
     });
     return {

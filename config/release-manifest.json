@@ -1,8 +1,8 @@
 {
   "product": "Evolving Profile",
-  "product_version": "6.1.0",
+  "product_version": "6.2.0",
   "release_channel": "stable",
-  "build_id": "ep610-adaptive-v6",
+  "build_id": "ep620-storage-governance",
   "schema_versions": {
     "runtime_settings": "1",
     "backup_settings": "1",

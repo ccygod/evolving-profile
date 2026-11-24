@@ -8,7 +8,7 @@ import { useTranslations } from "next-intl";
 import { prepare, layout, prepareWithSegments, layoutWithLines } from "@chenglou/pretext";
 import type { GraphData, GraphNode, GraphLink } from "./graph-2d";
 import { fitConstellationCamera } from "@/lib/constellation-camera";
-import { buildClusterCentroids } from "@/lib/constellation-layout";
+import { buildClusterCentroids, buildOrbitLayout, scatterOffset } from "@/lib/constellation-layout";
 
 // ============================================================================
 // Types
@@ -98,6 +98,19 @@ export interface ConstellationProps {
   clusterLabelFn?: (key: string) => string;
   /** An integration cluster to anchor at the center while peers orbit it. */
   centerClusterKey?: string;
+  /**
+   * "hull" (default): scattered members wrapped in a padded convex hull.
+   * "orbit": the center cluster sits in the middle and peers sit on a ring around
+   * it; members scatter with the same texture as the ungrouped (facts) view.
+   */
+  clusterStyle?: "hull" | "orbit";
+  /** Orbit mode: nodes that sit exactly at their cluster's center (e.g. a dimension hub). */
+  clusterAnchorFn?: (node: GraphNode) => boolean;
+  /**
+   * Replaces the bottom-right link-type legend. Pass [] to hide it when the
+   * surrounding panel already explains the colors.
+   */
+  legendItems?: Array<{ label: string; color: string }>;
 }
 
 // ============================================================================
@@ -266,7 +279,11 @@ export function Constellation({
   clusterColorFn,
   clusterLabelFn,
   centerClusterKey,
+  clusterStyle = "hull",
+  clusterAnchorFn,
+  legendItems,
 }: ConstellationProps) {
+  const isOrbit = clusterStyle === "orbit" && !!clusterKeyFn;
   const t = useTranslations("constellation");
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -298,13 +315,25 @@ export function Constellation({
   });
 
   // ----- Prepare data with Pretext -----
-  const { preparedNodes, linksByNode, linksWithIndices, clusters } = useMemo(() => {
+  const { preparedNodes, linksByNode, linksWithIndices, clusters, anchorSet, orbit, fitPoints } = useMemo(() => {
     if (!data.nodes.length)
       return {
         preparedNodes: [],
         linksByNode: new Map(),
         linksWithIndices: [],
-        clusters: [] as Array<{ key: string; members: number[]; color: string; label: string }>,
+        clusters: [] as Array<{
+          key: string;
+          members: number[];
+          color: string;
+          label: string;
+          wx: number;
+          wy: number;
+          wr: number;
+          isCenter: boolean;
+        }>,
+        anchorSet: new Set<number>(),
+        orbit: null as null | { ringRadius: number; centerKey?: string },
+        fitPoints: [] as Array<{ x: number; y: number }>,
       };
 
     const nodeIndexMap = new Map<string, number>();
@@ -356,6 +385,36 @@ export function Constellation({
       });
     });
 
+    // Orbit mode: anchors sit at the cluster center, everyone else spirals out.
+    const anchorSet = new Set<number>();
+    const spiralIndex = new Map<number, number>();
+    const spiralCount = new Map<string, number>();
+    const clusterHasAnchor = new Map<string, boolean>();
+    let orbit: null | { ringRadius: number; centerKey?: string } = null;
+    if (isOrbit) {
+      const descriptors: Array<[string, number, boolean]> = clusterOrder.map((k) => {
+        const members = clusterMembers.get(k)!;
+        let spiral = 0;
+        let hasAnchor = false;
+        for (const idx of members) {
+          if (clusterAnchorFn?.(data.nodes[idx])) {
+            anchorSet.add(idx);
+            hasAnchor = true;
+          } else {
+            spiralIndex.set(idx, spiral++);
+          }
+        }
+        spiralCount.set(k, spiral);
+        clusterHasAnchor.set(k, hasAnchor);
+        return [k, spiral, hasAnchor];
+      });
+      const layout = buildOrbitLayout(descriptors, centerClusterKey);
+      orbit = { ringRadius: layout.ringRadius, centerKey: layout.centerKey };
+      for (const [k, c] of layout.centroids) {
+        clusterCentroid.set(k, { cx: c.cx, cy: c.cy, r: c.r });
+      }
+    }
+
     // Prepare nodes: assign world positions + pretext-prepare text
     const nodes: PreparedNode[] = data.nodes.map((node, i) => {
       const text = node.label || node.id.substring(0, 12);
@@ -375,7 +434,22 @@ export function Constellation({
       let wx: number;
       let wy: number;
       const centroid = ck != null ? clusterCentroid.get(ck) : undefined;
-      if (centroid) {
+      if (centroid && isOrbit) {
+        if (anchorSet.has(i)) {
+          wx = centroid.cx;
+          wy = centroid.cy;
+        } else {
+          const [ox, oy] = scatterOffset(
+            spiralIndex.get(i) ?? 0,
+            spiralCount.get(ck!) ?? 1,
+            seed,
+            centroid.r,
+            clusterHasAnchor.get(ck!) ?? false
+          );
+          wx = centroid.cx + ox;
+          wy = centroid.cy + oy;
+        }
+      } else if (centroid) {
         // Scatter the node around its cluster centroid in a small disk.
         const members = clusterMembers.get(ck!)!;
         const j = members.indexOf(i);
@@ -407,12 +481,34 @@ export function Constellation({
     });
 
     // Cluster descriptors for the blob overlay (color + label + member indices).
-    const clusters = clusterOrder.map((key) => ({
-      key,
-      members: clusterMembers.get(key)!,
-      color: clusterColorFn?.(key) || DEFAULT_NODE_COLOR,
-      label: clusterLabelFn?.(key) ?? key,
-    }));
+    const clusters = clusterOrder.map((key) => {
+      const c = { ...clusterCentroid.get(key)! };
+      if (isOrbit) {
+        let spread = 0;
+        for (const idx of clusterMembers.get(key)!) {
+          spread = Math.max(spread, Math.hypot(nodes[idx].wx - c.cx, nodes[idx].wy - c.cy));
+        }
+        c.r = spread + 22;
+      }
+      return {
+        key,
+        members: clusterMembers.get(key)!,
+        color: clusterColorFn?.(key) || DEFAULT_NODE_COLOR,
+        label: clusterLabelFn?.(key) ?? key,
+        wx: c.cx,
+        wy: c.cy,
+        wr: c.r,
+        isCenter: orbit?.centerKey === key,
+      };
+    });
+
+    // Camera bounds: in orbit mode fit the halos (and their labels), not just dots.
+    const fitPoints = isOrbit
+      ? clusters.flatMap((c) => [
+          { x: c.wx - c.wr, y: c.wy - c.wr - 26 },
+          { x: c.wx + c.wr, y: c.wy + c.wr },
+        ])
+      : nodes.map((n) => ({ x: n.wx, y: n.wy }));
 
     // Build link structures
     const linksIdx: Array<{
@@ -420,6 +516,7 @@ export function Constellation({
       b: number;
       color: string;
       type: string;
+      cross: boolean;
     }> = [];
     const byNode = new Map<number, number[]>();
 
@@ -436,7 +533,7 @@ export function Constellation({
         DEFAULT_NODE_COLOR;
 
       const idx = linksIdx.length;
-      linksIdx.push({ a: ai, b: bi, color, type: link.type || "semantic" });
+      linksIdx.push({ a: ai, b: bi, color, type: link.type || "semantic", cross: !!clusterKeys && clusterKeys[ai] !== clusterKeys[bi] });
 
       if (!byNode.has(ai)) byNode.set(ai, []);
       if (!byNode.has(bi)) byNode.set(bi, []);
@@ -449,8 +546,11 @@ export function Constellation({
       linksByNode: byNode,
       linksWithIndices: linksIdx,
       clusters,
+      anchorSet,
+      orbit,
+      fitPoints,
     };
-  }, [data, nodeColorFn, linkColorFn, nodeHeatFn, clusterKeyFn, clusterColorFn, clusterLabelFn, centerClusterKey, preserveNodeColor]);
+  }, [data, nodeColorFn, linkColorFn, nodeHeatFn, clusterKeyFn, clusterColorFn, clusterLabelFn, centerClusterKey, preserveNodeColor, isOrbit, clusterAnchorFn]);
 
   // ----- Animation loop -----
   const animate = useCallback(() => {
@@ -516,6 +616,25 @@ export function Constellation({
       for (const li of myLinks) hoveredLinks.add(li);
     }
 
+    // --- Orbit regions: a light dashed boundary around each group ---
+    if (isOrbit && clusters.length > 0) {
+      ctx.save();
+      ctx.setLineDash([5, 5]);
+      ctx.lineWidth = 1;
+      for (const c of clusters) {
+        const hx = cx + c.wx * zoom;
+        const hy = cy + c.wy * zoom;
+        const hr = Math.max(c.wr * zoom, 12);
+        ctx.beginPath();
+        ctx.arc(hx, hy, hr, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba(c.color, isDark ? 0.06 : 0.035);
+        ctx.fill();
+        ctx.strokeStyle = hexToRgba(c.color, isDark ? 0.45 : 0.4);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     // --- Draw links ---
     const maxLinks = 6000;
     let linksDrawn = 0;
@@ -578,7 +697,7 @@ export function Constellation({
     // --- Draw scope cluster blobs (behind nodes) ---
     // Wrap each cluster's nodes in a translucent, outward-padded convex hull so
     // groups read as soft regions. Tiny clusters (<3 nodes) get a circle instead.
-    if (clusters.length > 0) {
+    if (clusters.length > 0 && !isOrbit) {
       ctx.save();
       ctx.lineJoin = "round";
       for (const cluster of clusters) {
@@ -730,11 +849,11 @@ export function Constellation({
       ctx.fill();
 
       // Soft glow halo for brighter stars (high link count)
-      if (n.linkCount > 3 && !isHovered && hoverIndex < 0) {
+      if ((n.linkCount > 3 || isOrbit) && !isHovered && hoverIndex < 0) {
         ctx.beginPath();
         ctx.arc(sx, sy, r * 2, 0, Math.PI * 2);
         ctx.fillStyle = n.heatColor;
-        ctx.globalAlpha = 0.06 + Math.min(n.linkCount * 0.005, 0.08);
+        ctx.globalAlpha = isOrbit ? 0.13 : 0.06 + Math.min(n.linkCount * 0.005, 0.08);
         ctx.fill();
       }
 
@@ -771,6 +890,27 @@ export function Constellation({
       }
     }
 
+    // Orbit captions: plain cluster names above each group, same type as hull labels.
+    if (isOrbit) {
+      ctx.save();
+      ctx.font = "600 12px Inter, -apple-system, \"PingFang SC\", sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      for (const c of clusters) {
+        if (!c.label) continue;
+        const lx = cx + c.wx * zoom;
+        const ly = cy + (c.wy - c.wr) * zoom - 6;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = isDark ? "rgba(9,9,11,0.85)" : "rgba(255,255,255,0.9)";
+        ctx.strokeText(c.label, lx, ly);
+        ctx.fillStyle = hexToRgba(c.color, isDark ? 0.95 : 0.9);
+        ctx.fillText(c.label, lx, ly);
+      }
+      ctx.restore();
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+    }
+
     // HUD
     ctx.font = MONO;
     ctx.fillStyle = isDark ? "#71717a" : "#71717a";
@@ -797,8 +937,10 @@ export function Constellation({
       entity: t("linkTypeEntity"),
       causal: t("linkTypeCausal"),
     };
-    for (const [type, color] of Object.entries(LINK_TYPE_COLORS).reverse()) {
-      const label = linkTypeLabel[type] ?? type;
+    const legendEntries: Array<[string, string]> = legendItems
+      ? legendItems.map((item) => [item.label, item.color])
+      : Object.entries(LINK_TYPE_COLORS).map(([type, color]) => [linkTypeLabel[type] ?? type, color]);
+    for (const [label, color] of legendEntries.slice().reverse()) {
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = isDark ? "#a1a1aa" : "#52525b";
       ctx.fillText(label, legendX, H - 12);
@@ -873,7 +1015,7 @@ export function Constellation({
     ctx.restore();
 
     animRef.current = requestAnimationFrame(animate);
-  }, [isDark, preparedNodes, linksWithIndices, linksByNode, clusters, linkOpacity, linkWidth, t]);
+  }, [isDark, preparedNodes, linksWithIndices, linksByNode, clusters, linkOpacity, linkWidth, t, isOrbit, orbit, anchorSet, legendItems]);
 
   // ----- Label drawing helper -----
   function drawLabel(
@@ -953,7 +1095,7 @@ export function Constellation({
 
     const fitCamera = (W: number, H: number) => {
       const camera = fitConstellationCamera(
-        preparedNodes.map((node) => ({ x: node.wx, y: node.wy })),
+        fitPoints,
         W,
         H
       );
@@ -1180,7 +1322,7 @@ export function Constellation({
       canvas.removeEventListener("mouseup", handleMouseUp);
       canvas.removeEventListener("mouseleave", handleMouseLeave);
     };
-  }, [animate, preparedNodes, onNodeClick, isFullscreen]);
+  }, [animate, preparedNodes, fitPoints, onNodeClick, isFullscreen]);
 
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen((prev) => !prev);

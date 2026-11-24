@@ -1,15 +1,34 @@
 "use client";
 import { useTranslations } from "next-intl";
-export function GraphWindowControls({ windowed }: { windowed: { data: any;error:string|null;loading:boolean;go:(offset:number)=>void;refresh:()=>void } }) {
+
+type Windowed = {
+  data: any;
+  error: string | null;
+  loading: boolean;
+  loadingMore?: boolean;
+  hasMore?: boolean;
+  loadMore?: () => void;
+  refresh: () => void;
+};
+
+/** Same wording and link style as the facts page: "显示 N 条记录中的 M 条 · 加载更多". */
+export function WindowLoadMore({ shown, total, windowed }: { shown: number; total: number; windowed: Windowed }) {
+  const t = useTranslations("releaseUi");
+  return <span>
+    {windowed.hasMore ? t("windowShowing", { shown, total }) : t("windowTotal", { total: Math.max(total, shown) })}
+    {windowed.hasMore ? <button type="button" className="ml-2 text-primary hover:underline disabled:opacity-50" disabled={windowed.loadingMore} onClick={() => windowed.loadMore?.()}>
+      {windowed.loadingMore ? t("windowLoadingMore") : t("windowLoadMore")}
+    </button> : null}
+  </span>;
+}
+
+export function GraphWindowControls({ windowed }: { windowed: Windowed }) {
   const t = useTranslations("releaseUi");
   const data = windowed.data;
-  return <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+  return <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
     {windowed.loading ? <p role="status">{t("scenarioLoading")}</p> : null}
     {windowed.error ? <p role="alert">{t(windowed.error === "stale" ? "scenarioStaleVersion" : "scenarioLoadError")}</p> : null}
-    {data ? <><span>{t("scenarioSampleCount", { shown:data.graph.nodes.length,total:data.page.total,indexed:data.page.total,unit:t("scenarioWindowNodes") })}</span>
-      <button type="button" className="rounded border px-2 py-1 disabled:opacity-40" disabled={data.page.offset===0} onClick={()=>windowed.go(Math.max(0,data.page.offset-data.page.limit))}>{t("scenarioPrevious")}</button>
-      <button type="button" className="rounded border px-2 py-1 disabled:opacity-40" disabled={data.page.nextOffset==null} onClick={()=>{if(data.page.nextOffset!=null)windowed.go(data.page.nextOffset);}}>{t("scenarioNext")}</button></> : null}
-    <button type="button" className="rounded border px-2 py-1" onClick={windowed.refresh}>{t("scenarioRefresh")}</button>
-    {data ? <span>{t("scenarioEdgeWindow")}</span> : null}
+    {data ? <WindowLoadMore shown={data.graph.nodes.length} total={data.page.total} windowed={windowed} /> : null}
+    <button type="button" className="text-xs text-muted-foreground hover:text-foreground hover:underline" onClick={windowed.refresh}>{t("scenarioRefresh")}</button>
   </div>;
 }

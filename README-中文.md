@@ -203,17 +203,23 @@ README 应该表达的就是这个差异：EP 难以被一个记忆后端替代�
 
 ## 哪些较成熟，哪些还需验证
 
-**本版为 EP 6.1.0 正式版；不同平台的验证边界仍单独标注。**
+**本版为 EP 6.2.0 正式版；不同平台的验证边界仍单独标注。**
 
-6.1.0 在 v6 统一架构基础上完成了**跨平台自适应内核、数据本体治理与前后端全链路对齐**：
+6.2.0 新增**存储治理**：检索从不使用的记忆不再占用向量索引，原始日志不再无限增长，所有节省都可以恢复（见[越用越省的存储](#ep-storage)）。
+- 低价值与重复记忆的**冷热分层**（`v6/memory_tiering.py`）、**半精度向量**（`halfvec`，迁移 `e2f3a4b5c6d7`）、与检索实际读取数量一致的时间关系上限，以及旧工具调用事件的**压缩归档与校验**（`v6/events_retention.py`）。
+- **MCP 适配器热更新**：每个请求处理前检查代码版本；失败按类型审计，参数错误返回 JSON-RPC `-32602`；新增不记录参数值的 Schema 偏差审计。
+- Hook 与 MCP 两条入口**使用同一偏好检索模式**；偏好 `scope` 结构与已生效版本由 SQLite 触发器强制约束。
+- 用户记忆与智能体记忆统一星座图风格，所有图谱视图支持**加载更多**。
+
+6.2 建立在 6.1 之上，6.1 在 v6 统一架构基础上完成了**跨平台自适应内核、数据本体治理与前后端全链路对齐**：
 - **统一控制面与零 Shell 调度**：本地单点 OpenAI 兼容 **Model Router**（`v6/model_router.py`，`:12095`，默认严格主备 `failover` + 熔断 + 遥测）与纯 Python 常驻事件驱动 **Scheduler Daemon**（`v6/daemon.py`，`:12096`，统一托管 13 项后台作业，零 `.zsh` 依赖，支持 macOS / Windows / Linux）。
 - **Postgres 18 & pgvector 0.8 自适应内核调优**（`v6/pg_autotune.py`）：按硬件内存与 CPU 自动计算 `shared_buffers`、`work_mem`、`maintenance_work_mem`、`effective_cache_size`、`max_wal_size`，开启 `jit = off`、`autovacuum_vacuum_scale_factor = 0.05`、`idle_in_transaction_session_timeout = 60s`、`pg_stat_statements` 慢查询剖析、全库 `ANALYZE`，并自动检测 `pgvector >= 0.8` 启用 `hnsw.iterative_scan = relaxed_order`。
 - **双时态可变状态与数据本体治理**：新增通用双时态 **Entity State** 状态账本（`v6/entity_state.py`，`ep_events.entity_state`，带 `valid_from`/`valid_to`/`superseded_by`）、IDF 加权 **实体图谱**（`v6/entity_graph.py`）、**双时态与信任重排器**（`v6/reranker.py`）、自动化 **本体与偏好治理引擎**（`v6/ontology_hygiene.py`：活跃认知模型去重、偏好 `enforcement` 红线分级与 `scope_level` 作用域隔离、未确认助手经历软降权、测试 Bank 与孤儿 HNSW 索引及单次实体自动清理）、**SQLite 与旧构建治理**（`v6/sqlite_hygiene.py`）以及 **黄金质量门禁**（`v6/eval_harness.py`）。
 - **Web 控制台可视化匹配**：多维度偏好星座图与详情面板同步展示红线禁令 / 作用域分级，记忆星座图自动淡化软降权历史噪声同时保留可追溯性，全链路拓扑图补齐「实体状态」与「双时态与信任重排」节点。
 
-EP 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发，见 [NOTICE.md](NOTICE.md)。完整变更见 [CHANGELOG-6.1.md](CHANGELOG-6.1.md) · [CHANGELOG-6.0.md](CHANGELOG-6.0.md)，架构说明见 [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md)（历史 5.1 变更见 [CHANGELOG-5.1.md](CHANGELOG-5.1.md)）。
+EP 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发，见 [NOTICE.md](NOTICE.md)。完整变更见 [CHANGELOG-6.2.md](CHANGELOG-6.2.md) · [CHANGELOG-6.1.md](CHANGELOG-6.1.md) · [CHANGELOG-6.0.md](CHANGELOG-6.0.md)，架构说明见 [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md)（历史 5.1 变更见 [CHANGELOG-5.1.md](CHANGELOG-5.1.md)）。
 
-产品版本以 [VERSION](VERSION) 为唯一权威，构建信息见 [发行清单](config/release-manifest.json)。当前 6.1.0 文档与代码位于 `main` 及 [`release/6.1.0` 分支](https://github.com/gtkj/evolving-profile/tree/release/6.1.0)（标签 [`v6.1.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.1.0)，个人镜像见 [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)）。
+产品版本以 [VERSION](VERSION) 为唯一权威，构建信息见 [发行清单](config/release-manifest.json)。当前 6.2.0 文档与代码位于 `main` 及 [`release/6.2.0` 分支](https://github.com/gtkj/evolving-profile/tree/release/6.2.0)（标签 [`v6.2.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.2.0)，个人镜像见 [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)）。
 
 | 能力 | 当前成熟度与证据 | 仍需验证 |
 | --- | --- | --- |
@@ -337,6 +343,22 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 安装器不会开启实验性全历史模型试验。历史记录可能处于待审、保护或未知状态；
 系统不会为了让面板变绿而抹去这些状态。
 
+<a id="ep-storage"></a>
+
+## 越用越省的存储
+
+什么都留的记忆系统会一直变大，而增长的大部分是噪声：未经确认的助手陈述、碎片、多个宿主重复记下的同一件事、没人再看的工具调用日志。EP 6.2 把存储当作检索质量的一部分来管，规则只有一条：**只清理从来不被读取的内容，并且留好恢复的路。**
+
+| 机制 | 做什么 | 如何恢复 |
+| --- | --- | --- |
+| 冷热分层（`v6/memory_tiering.py`，每 10 分钟） | 低价值和重复记忆退出向量索引；正文、来源、关键词/全量检索和 `read_source` 照常可用。判定重复还要求数字和日期一致，"1,180 条"不会被并进"1,280 条" | `python -m v6.memory_tiering restore <unit_id>` 或 `--reason duplicate` |
+| 半精度向量（迁移 `e2f3a4b5c6d7`） | 以 `halfvec` 存储并建 HNSW 索引，体积约减半，排序不变 | `alembic downgrade`，或迁移前设 `EVOLVING_PROFILE_EMBEDDING_STORAGE=vector` |
+| 时间关系上限 10 条 | 只写图检索真正会读的关系 | — |
+| 事件日志保留（`v6/events_retention.py`，每天） | 闲置超过 30 天的会话，其工具调用记录压缩成一行存进数据库，校验通过后再删除；对话正文保留 | `python -m v6.events_retention restore <archive_id>` |
+| 工作区与轨迹清理 | 过期的研究快照在所有入口都会清理；召回轨迹只存记忆 ID 和分数 | — |
+
+在一套安装上实测（约 7.5 万条记忆，前后使用同一组问题）：记忆表从 885 MB 降到 525 MB，向量索引从 146 MB 降到 69 MB；召回 p50 从 0.221 秒降到 0.17–0.18 秒；指定记忆召回命中从 84/100 升到 87/100；前 10 条结果中的完全重复从 9.7% 降到 0.3%，低价值内容从 18.3% 降到 0。不同数据结果会不同，可以用 `python -m v6.storage_bench run before.json` 和 `... diff before.json after.json` 在自己的 Bank 上用固定问题对比。
+
 <a id="ep-quick-start"></a>
 
 ## 快速开始
@@ -345,7 +367,7 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 
 完整本机链路要分开验收：
 
-1. **构建：**运行安装器，确认它从 `VERSION` 报出 `EP 6.1.0`。
+1. **构建：**运行安装器，确认它从 `VERSION` 报出 `EP 6.2.0`。
 2. **API：**启动 `8888`，要求 `curl --fail http://127.0.0.1:8888/health` 成功。
 3. **Controller：**启动 `12079`，要求 `curl --fail http://127.0.0.1:12079/v1/status` 成功。
 4. **Console：**启动 `9999`，打开所选语言页面，创建/选择自己的 Bank，并实际点击健康和配置页面。
@@ -359,7 +381,7 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 [选择具体宿主](docs/HOST-SETUP-中文.md) → [复制对应 Agent 提示词](docs/AGENT-SETUP-中文.md)。
 **安装本候选包：**先看[候选版安装入口](docs/CANDIDATE-SETUP.md)。
 **给 Agent 读：**接入不等于会使用，继续阅读[Agent 日常操作协议](docs/AGENT-USAGE-中文.md)。
-本工作树是 **6.1.0** 发行线，当前文档分支为 `release/6.1.0`（与 `main` 同步）；产品版本始终读 [VERSION](VERSION)，
+本工作树是 **6.2.0** 发行线，当前文档分支为 `release/6.2.0`（与 `main` 同步）；产品版本始终读 [VERSION](VERSION)，
 旧的 `v5.1.x` 标签仅作历史归档，不能根据旧 Tag 判断最新版。
 
 ### 环境要求
@@ -445,7 +467,7 @@ Worker 有独立配置与就绪要求。API 的 HTTP MCP 握手不能证明宿�
 | **豆包工作** | 审阅实际插件配置，为当前任务启用并阅读日常协议；Skill不保证每轮自动调用。 |
 
 源码来源为 `https://github.com/gtkj/evolving-profile`（个人镜像 `https://github.com/ccygod/evolving-profile`）；使用
-`main` 或当前 `release/6.1.0` 分支（或对应命名核验归档），不能用旧远端分支替代。
+`main` 或当前 `release/6.2.0` 分支（或对应命名核验归档），不能用旧远端分支替代。
 **[完整分宿主提示词（含 Hermes）直接复制](docs/AGENT-SETUP-中文.md)。**
 长版包括备份合并、绝对路径、健康检查、网页点击、工具/捕获验收、配置生效、可选项和停止回退。
 
@@ -517,7 +539,7 @@ EP 发行作者/维护者：**CCY**。[主仓库](https://github.com/gtkj/evolvi
 - [本地安装与回退](docs/LOCAL-SETUP.md) · [API 配置](api/README.md)
 - [完整部署](docs/DEPLOYMENT-中文.md) · [分宿主接入](docs/HOST-SETUP-中文.md) · [Agent 安装话](docs/AGENT-SETUP-中文.md)
 - [Agent 日常操作](docs/AGENT-USAGE-中文.md) · [候选包安装](docs/CANDIDATE-SETUP.md)
-- [6.1 更新日志](CHANGELOG-6.1.md) · [6.0 更新日志](CHANGELOG-6.0.md) · [v6 架构说明](docs/ARCHITECTURE-v6.md) · [历史 5.1 更新日志](CHANGELOG-5.1.md)
+- [6.2 更新日志](CHANGELOG-6.2.md) · [6.1 更新日志](CHANGELOG-6.1.md) · [6.0 更新日志](CHANGELOG-6.0.md) · [v6 架构说明](docs/ARCHITECTURE-v6.md) · [历史 5.1 更新日志](CHANGELOG-5.1.md)
 - [唯一真相源](config/source-of-truth.json) · [安全策略](SECURITY.md)
 
 ## 基于 Hindsight 开发

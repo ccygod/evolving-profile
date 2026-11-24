@@ -300,6 +300,8 @@ def build_production_jobs(data_root: str | Path, *, bank_id: str | None = None) 
     if resolved_bank:
         topic_semantics_cmd.extend(["--bank-id", resolved_bank])
 
+    storage_env = {**os.environ, "EVOLVING_PROFILE_STATE_ROOT": str(root)}
+    tiering_env = {**storage_env, "EVOLVING_PROFILE_BANK_ID": resolved_bank}
     return [
         ScheduledJob("retention-worker", 30.0, lambda: _run_cmd([py, str(host_adapter / "retention_worker.py"), "--once"], timeout=120)),
         ScheduledJob("context-worker", 60.0, lambda: _run_cmd(context_cmd, timeout=600)),
@@ -317,7 +319,14 @@ def build_production_jobs(data_root: str | Path, *, bank_id: str | None = None) 
         ScheduledJob("ontology-hygiene", 86400.0, lambda: _run_cmd([py, "-m", "v6.ontology_hygiene", "--apply"], timeout=600)),
         ScheduledJob("sqlite-hygiene", 86400.0, lambda: _run_cmd([py, "-m", "v6.sqlite_hygiene", "--apply"], timeout=600)),
         ScheduledJob("pg-analyze", 86400.0, lambda: _run_cmd([py, "-m", "v6.pg_autotune", "--analyze-only"], timeout=300)),
-    ]
+        # Storage governance (6.2): archive tool rows of sessions idle > 30 days
+        # (self-skips unless the installed ledger carries the archived-session guard).
+        ScheduledJob("events-retention", 86400.0, lambda: _run_cmd([py, "-m", "v6.events_retention"], env=storage_env, timeout=900)),
+    ] + ([
+        # Admission tiering (6.2): new low-value units and near-duplicates go warm.
+        ScheduledJob("memory-tiering", 600.0, lambda: _run_cmd([py, "-m", "v6.memory_tiering", "admit"],
+                                                               env=tiering_env, timeout=600)),
+    ] if resolved_bank else [])
 
 
 def _scan_watch_signature(paths: list[Path]) -> float:

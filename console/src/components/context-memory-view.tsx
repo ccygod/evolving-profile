@@ -10,6 +10,7 @@ const Graph2D = dynamic(() => import("./graph-2d").then(module => module.Graph2D
 import { describeManualSourceCoverage, selectContextEpisode, summaryDisplayStatus, type AutomatedSourceCoverage, type ContextSourceOffset, type ScenarioProcessing } from "@/lib/context-node";
 
 import { useWindowedGraph } from "@/lib/use-windowed-graph";
+import { WindowLoadMore } from "./graph-window-controls";
 import { inlineUiText } from "@/lib/inline-i18n";
 import {ScenarioCoverageDetails} from "./scenario-coverage-details";
 type ContextNode = {
@@ -379,11 +380,8 @@ export function ContextMemoryView({ bankId }: { bankId: string | null }) {
         </form>
         {windowed.loading ? <p role="status" className="mb-3 text-xs">{scenarioText("scenarioLoading")}</p> : null}
         {windowed.error ? <p role="alert" className="mb-3 text-xs text-amber-700">{scenarioText(windowed.error === "stale" ? "scenarioStaleVersion" : "scenarioLoadError")}</p> : null}
-        {data ? <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-          <span>{scenarioText("scenarioSampleCount",{shown:viewMode === "table" ? edges.length : graph?.nodes.length ?? 0,total:data.page.total,indexed:data.page.indexedTotal,unit:scenarioText(viewMode === "table" ? "scenarioWindowRelations" : "scenarioWindowNodes")})}</span>
-          <button type="button" disabled={data.page.offset===0} className="rounded border px-2 py-1 disabled:opacity-40" onClick={()=>windowed.go(Math.max(0,data.page.offset-data.page.limit))}>{scenarioText("scenarioPrevious")}</button>
-          <button type="button" disabled={data.page.nextOffset==null} className="rounded border px-2 py-1 disabled:opacity-40" onClick={()=>{if(data.page.nextOffset!=null)windowed.go(data.page.nextOffset);}}>{scenarioText("scenarioNext")}</button>
-          <span>{scenarioText("scenarioEdgeWindow")}</span>
+        {data ? <div className="mb-3 text-sm text-muted-foreground">
+          <WindowLoadMore shown={viewMode === "table" ? edges.length : graph?.nodes.length ?? 0} total={data.page.total} windowed={windowed} />
         </div> : null}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

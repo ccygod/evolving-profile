@@ -27,7 +27,8 @@ def test_correction_creates_revision_preserves_evidence_and_rejects_stale(tmp_pa
 def test_correction_does_not_promote_pending_or_edit_provenance(tmp_path):
     from lib.preference_correction import correct_preference
     repo = GuidanceRepository(tmp_path / 'registry.sqlite3', 'bank')
-    repo.store_active_unit_for_migration({'id': 'u', 'revision': 'r1', 'text': 'original', 'primary_category': 'delivery'})
+    # Every stored unit needs a dict scope (storage contract, 2026-11-24).
+    repo.store_active_unit_for_migration({'id': 'u', 'revision': 'r1', 'text': 'original', 'primary_category': 'delivery', 'scope': {'user_id': 'user'}})
     repo.set_unit_audit('u', 'r1', {'state': 'needs_review'})
     correct_preference(repo.path, {'unit_id': 'u', 'expected_revision': 'r1', 'text': 'corrected'})
     assert repo.active_units()[0]['preference_audit']['state'] == 'needs_review'

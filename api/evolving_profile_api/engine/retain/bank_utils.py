@@ -2,6 +2,7 @@
 bank profile utilities for disposition and mission management.
 """
 
+import os
 import asyncio
 import json
 import logging
@@ -43,6 +44,12 @@ def _vector_index_clause() -> str | None:
     ext = get_config().vector_extension
     if not uses_per_bank_vector_indexes(ext):
         return None
+    if ext == "pgvector" and os.environ.get("EVOLVING_PROFILE_EMBEDDING_STORAGE", "halfvec") != "vector":
+        # memory_units.embedding is stored as halfvec (migration e2f3a4b5c6d7):
+        # half the vector + HNSW size, same recall. Per-bank partial indexes must
+        # use the matching operator class. mental_models keeps `vector` and is
+        # indexed by migrations.py with the generic clause.
+        return "USING hnsw (embedding halfvec_cosine_ops)"
     return index_using_clause(ext)
 
 

@@ -221,20 +221,26 @@ guarantee that every old memory is correct or every future task will improve.
 
 ## Maturity at a glance
 
-**6.1.0 is the current release; platform-specific validation boundaries remain explicit.**
+**6.2.0 is the current release; platform-specific validation boundaries remain explicit.**
 
-The 6.1.0 release builds on the unified v6 architecture with full cross-platform adaptive runtime & ontology governance:
+6.2.0 adds **storage governance**: memory that retrieval never uses stops taking vector-index space, raw logs stop growing without bound, and every saving is reversible (see [Storage that stays small](#ep-storage)).
+- **Hot/warm tiering** of low-value and duplicate memories (`v6/memory_tiering.py`), **half-precision embeddings** (`halfvec`, migration `e2f3a4b5c6d7`), a temporal-link cap matched to what retrieval reads, and **compressed, verified archiving** of old tool-call events (`v6/events_retention.py`).
+- **MCP adapter live reload** before each request, typed failure audit with JSON-RPC `-32602` for bad arguments, and a schema-drift audit that never records argument values.
+- **One preference retrieval mode** for the Hook and MCP paths, and SQLite-enforced preference `scope` / immutable active revisions.
+- A unified constellation style across user and agent memory, with **Load more** on every graph view.
+
+It builds on 6.1, the unified v6 architecture with cross-platform adaptive runtime & ontology governance:
 - **Unified Control Plane & Zero-Shell Scheduling**: local OpenAI-compatible **Model Router** (`v6/model_router.py`, `:12095`, strict failover default + circuit breaker + telemetry) and resident pure-Python **Scheduler Daemon** (`v6/daemon.py`, `:12096`) managing 13 background jobs with zero `.zsh`/shell dependency across macOS, Windows, and Linux.
 - **Cross-Platform Postgres 18 & pgvector 0.8 Auto-Tuner** (`v6/pg_autotune.py`): hardware-adaptive `shared_buffers`, `work_mem`, `maintenance_work_mem`, `effective_cache_size`, `max_wal_size`, `jit = off`, `autovacuum_vacuum_scale_factor = 0.05`, `idle_in_transaction_session_timeout = 60s`, `pg_stat_statements` slow-SQL profiling, full-DB `ANALYZE`, and automatic `pgvector >= 0.8` `hnsw.iterative_scan = relaxed_order`.
 - **Bi-Temporal State & Ontology Hygiene**: generalized mutable **Entity State** ledger (`v6/entity_state.py`, `ep_events.entity_state` with `valid_from`/`valid_to`/`superseded_by`), IDF-weighted **Entity Graph** (`v6/entity_graph.py`), **Bi-Temporal & Trust Reranker** (`v6/reranker.py`), automated **Ontology & Preference Governance** (`v6/ontology_hygiene.py`: active model deduplication, `enforcement` guardrails + `scope_level` isolation, unconfirmed assistant experience soft-demotion, orphan HNSW index & singleton entity cleanup), **SQLite & Release Hygiene** (`v6/sqlite_hygiene.py`), and an automated **Golden Quality Gate** (`v6/eval_harness.py`).
 - **Matched Web Console Visualization**: Preference Constellation highlights `hard_guardrail` vs `default_policy` / `soft_style` and `scope_level`, Memory Constellation dims soft-demoted entries while preserving traceability, and the Full-Chain Topology exposes **Entity State** and **Bi-temporal & Trust Rerank**.
 
-EP is developed on top of [Hindsight](https://github.com/vectorize-io/hindsight); see [NOTICE.md](NOTICE.md). Full notes: [CHANGELOG-6.1.md](CHANGELOG-6.1.md) · [CHANGELOG-6.0.md](CHANGELOG-6.0.md) · Architecture: [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md) · Earlier 5.1 notes: [CHANGELOG-5.1.md](CHANGELOG-5.1.md).
+EP is developed on top of [Hindsight](https://github.com/vectorize-io/hindsight); see [NOTICE.md](NOTICE.md). Full notes: [CHANGELOG-6.2.md](CHANGELOG-6.2.md) · [CHANGELOG-6.1.md](CHANGELOG-6.1.md) · [CHANGELOG-6.0.md](CHANGELOG-6.0.md) · Architecture: [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md) · Earlier 5.1 notes: [CHANGELOG-5.1.md](CHANGELOG-5.1.md).
 
 Product version comes from [VERSION](VERSION); channel/build metadata comes from
-the checked [release manifest](config/release-manifest.json). The current 6.1.0
-documentation and code are on `main` and the [`release/6.1.0` branch](https://github.com/gtkj/evolving-profile/tree/release/6.1.0)
-(tag [`v6.1.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.1.0), mirrored on [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)).
+the checked [release manifest](config/release-manifest.json). The current 6.2.0
+documentation and code are on `main` and the [`release/6.2.0` branch](https://github.com/gtkj/evolving-profile/tree/release/6.2.0)
+(tag [`v6.2.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.2.0), mirrored on [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)).
 
 | Area | Current evidence | Still needs validation |
 | --- | --- | --- |
@@ -386,6 +392,31 @@ Experimental whole-history model trials are not enabled by the installer.
 Existing historical records may remain pending, protected or unknown; those
 statuses are not erased merely to make a dashboard green.
 
+<a id="ep-storage"></a>
+
+## Storage that stays small
+
+A memory system that keeps everything grows forever, and most of that growth is
+noise: unconfirmed assistant statements, fragments, the same fact captured from
+several hosts, tool-call logs nobody reads again. EP 6.2 treats storage as part of
+retrieval quality, with one rule: **remove only what is never read, and keep a way
+back.**
+
+| Mechanism | What it does | How to undo |
+| --- | --- | --- |
+| Hot/warm tiering (`v6/memory_tiering.py`, every 10 min) | Low-value units and duplicates leave the vector index; text, provenance, keyword/exhaustive search and `read_source` stay. Duplicates must also match numbers and dates, so "1,180 rows" never merges into "1,280 rows". | `python -m v6.memory_tiering restore <unit_id>` or `--reason duplicate` |
+| Half-precision embeddings (migration `e2f3a4b5c6d7`) | `halfvec` storage and HNSW indexes, about half the size, same ranking | `alembic downgrade`, or `EVOLVING_PROFILE_EMBEDDING_STORAGE=vector` before migrating |
+| Temporal-link cap 10 | Writes only the links graph retrieval actually reads | — |
+| Event-log retention (`v6/events_retention.py`, daily) | Tool-call rows of sessions idle > 30 days are compressed into one database row, verified, then deleted; messages are kept | `python -m v6.events_retention restore <archive_id>` |
+| Workspace and trace hygiene | Expired research manifests are swept on every path; recall traces keep ids and scores | — |
+
+Measured on one installation (~75k units, same prompts before and after): the
+memory table went from 885 to 525 MB and vector indexes from 146 to 69 MB; recall
+p50 went from 0.221 s to 0.17–0.18 s; known-item hit@10 rose from 84 to 87 of 100;
+exact duplicates in the top 10 fell from 9.7 % to 0.3 % and low-value units from
+18.3 % to 0. Your numbers will differ — `python -m v6.storage_bench run before.json`
+and `... diff before.json after.json` measure your own bank on frozen questions.
+
 <a id="ep-quick-start"></a>
 
 ## Quick start
@@ -395,15 +426,15 @@ statuses are not erased merely to make a dashboard green.
 **Installing this candidate?** Start with [candidate setup](docs/CANDIDATE-SETUP.md).
 **Agent reading this repository:** installation alone is not usage; read
 [the Agent operating guide](docs/AGENT-USAGE.md) before choosing memory tools.
-This checkout is the **6.1.0** release line. The product version is read from
-[VERSION](VERSION), and the current documentation branch is `release/6.1.0`
+This checkout is the **6.2.0** release line. The product version is read from
+[VERSION](VERSION), and the current documentation branch is `release/6.2.0`
 (mirrored on `main`); older `v5.1.x` tags are historical archives only.
 
 ### First-run acceptance path
 
 For a complete local run, treat these as separate gates:
 
-1. **Build:** run the installer and confirm it reports `EP 6.1.0` from `VERSION`.
+1. **Build:** run the installer and confirm it reports `EP 6.2.0` from `VERSION`.
 2. **API:** start port `8888` and require `curl --fail http://127.0.0.1:8888/health`.
 3. **Controller:** start port `12079` and require `curl --fail http://127.0.0.1:12079/v1/status`.
 4. **Console:** start port `9999`, open the selected language route, create or select your own Bank, and click through the health/configuration pages.
@@ -505,7 +536,7 @@ your own credentials are still required.
 | **Doubao Work** | Review the actual plugin setup, select it for this task and follow the operating guide; do not claim a Skill guarantees every-turn execution. |
 
 Repository provenance: `https://github.com/gtkj/evolving-profile` (mirror: `https://github.com/ccygod/evolving-profile`).
-Use `main` or the current `release/6.1.0` branch (or a named verified archive); do not silently
+Use `main` or the current `release/6.2.0` branch (or a named verified archive); do not silently
 substitute older `v5.1.x` tags without comparing their commit and manifest.
 **[Copy the full per-host prompts, including Hermes](docs/AGENT-SETUP.md).**
 They specify backup/merge, absolute paths, real health/UI/tool/capture acceptance,
@@ -587,7 +618,7 @@ ownership, Git commit identity and upstream acknowledgment remain distinct.
 - [Local setup and rollback](docs/LOCAL-SETUP.md) · [API configuration](api/README.md)
 - [Deployment](docs/DEPLOYMENT.md) · [Host setup](docs/HOST-SETUP.md) · [Agent requests](docs/AGENT-SETUP.md)
 - [Agent operating guide](docs/AGENT-USAGE.md) · [Candidate setup](docs/CANDIDATE-SETUP.md)
-- [Changelog (6.1)](CHANGELOG-6.1.md) · [Changelog (6.0)](CHANGELOG-6.0.md) · [Architecture (v6)](docs/ARCHITECTURE-v6.md) · [Earlier 5.1 notes](CHANGELOG-5.1.md)
+- [Changelog (6.2)](CHANGELOG-6.2.md) · [Changelog (6.1)](CHANGELOG-6.1.md) · [Changelog (6.0)](CHANGELOG-6.0.md) · [Architecture (v6)](docs/ARCHITECTURE-v6.md) · [Earlier 5.1 notes](CHANGELOG-5.1.md)
 - [Source-of-truth map](config/source-of-truth.json) · [Security policy](SECURITY.md)
 
 ## Built on Hindsight

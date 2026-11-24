@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import time
 import re
 import sys
 import uuid
@@ -112,6 +113,15 @@ def _process_workspace_path(workspace_id: str) -> Path:
 def _read_process_workspace(workspace_id: str) -> dict:
     path = _process_workspace_path(workspace_id)
     if not path.exists():
+        # Lifecycle archive (bin/ep-trace-lifecycle.py): slim gzip copy of workspaces older than the TTL.
+        archived = path.parent / 'archive' / f'{path.stem}.json.gz'
+        if archived.exists():
+            try:
+                import gzip
+                value = json.loads(gzip.decompress(archived.read_bytes()).decode('utf-8'))
+                return value if isinstance(value, dict) else {}
+            except (OSError, ValueError, TypeError, EOFError):
+                return {}
         return {}
     try:
         value = json.loads(path.read_text(encoding='utf-8'))
@@ -133,6 +143,11 @@ def _merge_process_workspace(workspace_id: str, payload: dict) -> dict:
     current = _read_process_workspace(workspace_id)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     merged = {**current, **payload, 'workspace_id': _safe_workspace_id(workspace_id), 'updated_at': now}
+    try:
+        from lib.trace_slim import slim_relevance_audit
+        merged['relevance_audit'] = slim_relevance_audit(merged.get('relevance_audit'))
+    except Exception:
+        pass
     merged['query_snapshots'] = {**(current.get('query_snapshots') or {}), **(payload.get('query_snapshots') or {})}
     # Paging calls append/refresh candidate references instead of discarding
     # the previous page.  The stable ID is the merge key, so an Agent can keep
@@ -150,7 +165,7 @@ def _merge_process_workspace(workspace_id: str, payload: dict) -> dict:
     fd, temporary = tempfile.mkstemp(prefix='.workspace-', suffix='.json', dir=str(path.parent))
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-            json.dump(merged, stream, ensure_ascii=False, indent=2)
+            json.dump(merged, stream, ensure_ascii=False, separators=(',', ':'))
             stream.write('\n')
             stream.flush()
             os.fsync(stream.fileno())
@@ -896,13 +911,15 @@ TOOL = {
             "facets": {"type":"array","items":{"oneOf":[{"type":"string","minLength":1},{"type":"object","additionalProperties":False,"properties":{"name":{"type":"string"},"query":{"type":"string","minLength":1}},"required":["query"]}]},"minItems":1,"maxItems":8,"description":"可选的独立检索子问题，每次最多8个；可传字符串或{name,query}。更多问题分次调用。"},
             "budget": {"type": "string", "enum": ["low", "mid", "high"], "default": "high"},
             "max_tokens": {"type": "integer", "minimum": 200, "maximum": 6000, "default": 2400},
-            "force_deep": {"type": "boolean", "default": False, "description": "仅在明确要求跨任务完整盘点、历史核查或关联闭包时使用。"},
+            "force_deep": {"type": "boolean", "default": False, "description": "仅在明确要求跨任务完整盘点、历史核查或关联闭包时使用；force_deep=true 时只接受一个完整 query，不能同时传 facets。"},
             "bank_alias": {"type":"string","enum":["personal"],"default":"personal","description":"服务端授权别名；当前只开放personal，不接受任意Bank ID。"},
             "types": {"type":"array","items":{"type":"string","enum":["world","experience","observation"]},"description":"限定事实类型；空数组按未限定处理。"},
             "temporal_window": {"type":"object","additionalProperties":False,"properties":{"start":{"type":"string"},"end":{"type":"string"}},"required":["start","end"],"description":"时间检索信号，不冒充严格过滤。"},
             "prefer_observations": {"type":"boolean","default":False,"description":"同时检索观察和底层事实时减少同源重复。"},
             "max_results":{"type":"integer","minimum":1,"maximum":20,"default":6,"description":"本页最多返回多少条候选预览；更多使用read_research分页，完整原文使用read_source。"},
         },
+        "allOf": [{"if": {"properties": {"force_deep": {"const": True}}, "required": ["force_deep"]},
+                   "then": {"not": {"required": ["facets"]}}}],
     },
     "annotations": {"readOnlyHint": True, "openWorldHint": False},
 }
@@ -1063,6 +1080,20 @@ def _record_failed_tool_call(tool, args, error, event_at):
              'turn_id':binding.get('turn_id'),'hook_invocation_id':binding.get('hook_invocation_id'),
              'error':mask_text(str(error.get('message') if isinstance(error,dict) else error))[:1200],
              'delivery':{'host_visibility':'unknown','answer_use':'not_measured'}}
+    exc = globals().get('LAST_EXCEPTION')
+    code = error.get('code') if isinstance(error, dict) else None
+    message = str(error.get('message') if isinstance(error, dict) else error)
+    contract_hint = re.search(r'(must be|is required|required\b|invalid[ _]|not accepted|takes one|takes no arguments|out of range|unknown tool|\d+\s*(?:\.\.|to)\s*\d+)', message, re.I)
+    event['error_kind'] = ('caller_contract' if code == -32602 or type(exc).__name__ == 'GuidanceInputError'
+                           or (type(exc).__name__ in ('ValueError', 'KeyError') and contract_hint) else 'internal')
+    if exc is not None:
+        import traceback as _tb
+        frames = _tb.extract_tb(exc.__traceback__)[-6:]
+        event['error_type'] = type(exc).__name__
+        event['error_traceback'] = [f"{Path(f.filename).name}:{f.lineno} {f.name}: {mask_text(str(f.line or ''))[:160]}" for f in frames]
+    event['argument_shape'] = {k: type(v).__name__ for k, v in (args.items() if isinstance(args, dict) else [])}
+    event['adapter'] = {'pid': os.getpid(), 'started_at': globals().get('_STARTED_AT'),
+                        'code_fingerprint': globals().get('_BOOT_FINGERPRINT')}
     audit_root = Path.home()/'.evolving-profile/audit'
     audit_root.mkdir(parents=True,exist_ok=True)
     with (audit_root/'mcp-tool-activity.jsonl').open('a',encoding='utf-8') as stream:
@@ -1249,6 +1280,42 @@ def _query_scope_audit(check_id, query, binding, home=None):
         'next_action': 'Check prior confirmed context or direct source support; otherwise rerun a neutral scope query before asserting a project or version.' if added_amounts or added_splits else None,
         'boundary': 'Absent from this recorded Prompt preview is not proof of fabrication: the rest of a long Prompt, prior conversation or verified sources may support these anchors. Check provenance before using them to narrow scope or assert a version; retrieval is not blocked.',
     }
+
+def _advertised_schemas():
+    tools=[TOOL, RESEARCH_TOOL, RESEARCH_PAGE_TOOL, SOURCE_TOOL, FIND_SOURCES_TOOL, EXHAUSTIVE_SEARCH_TOOL, THREAD_AUDIT_TOOL, GUIDANCE_TOOL, CHECK_TOOL, GUIDANCE_UNIT_TOOL, MEMORY_INSTRUCTIONS_TOOL,CATALOG_LIST_TOOL,CATALOG_SEARCH_TOOL,CATALOG_READ_TOOL,EVIDENCE_DECISION_TOOL,TASK_STATE_TOOL,SCENARIO_SUMMARY_TOOL,SCENARIO_GATE_TOOL,SCENARIO_CONTEXT_SEARCH_TOOL,EXTERNAL_RAG_TOOL,JEV_RISK_TOOL,AGENT_TRAJECTORY_TOOL,AGENT_DRAFT_TOOL,AGENT_PROMOTION_TOOL,AGENT_RECALL_TOOL,AGENT_RESEARCH_TOOL,AGENT_READ_TOOL,AGENT_CONTEXT_TOOL,AGENT_WORKSPACE_TOOL,AGENT_REVALIDATION_TOOL,AGENT_EVALUATION_TOOL,AGENT_ROLLOUT_TOOL,AGENT_CAPABILITY_TOOL] + ([PREFERENCE_TOOL, RUNTIME_GUIDANCE_TOOL] if PREFERENCE_TOOL and RUNTIME_GUIDANCE_TOOL else [])
+    return {t['name']: t.get('inputSchema') for t in tools if isinstance(t, dict) and t.get('name')}
+
+
+def _record_schema_drift(name, arguments):
+    """Record (never enforce) calls whose arguments violate the advertised inputSchema.
+
+    Declared schema and server-side validation drifted apart before (callers kept
+    getting rejected for rules the schema never stated). This makes the drift
+    visible in audit/mcp-schema-drift.jsonl without risking working calls.
+    """
+    try:
+        schema = _advertised_schemas().get(str(name or ''))
+        if not isinstance(schema, dict):
+            return
+        from jsonschema import Draft202012Validator
+        errors = list(Draft202012Validator(schema).iter_errors(arguments if arguments is not None else {}))[:5]
+        if not errors:
+            return
+        event = {'at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'tool': name,
+                 # Only rule + constraint, never argument values (messages can echo user text).
+                 'violations': [{'path': '/'.join(str(p) for p in e.absolute_path) or '(root)', 'rule': e.validator,
+                                 'constraint': (str(e.validator_value)[:120] if e.validator in
+                                                ('type', 'enum', 'const', 'minimum', 'maximum', 'minLength', 'maxLength',
+                                                 'minItems', 'maxItems', 'required', 'additionalProperties') else None),
+                                 'unexpected_keys': (sorted(set(e.instance) - set(e.schema.get('properties') or {}))[:10]
+                                                     if e.validator == 'additionalProperties' and isinstance(e.instance, dict) else None)}
+                                for e in errors],
+                 'argument_shape': {k: type(v).__name__ for k, v in (arguments or {}).items()} if isinstance(arguments, dict) else type(arguments).__name__}
+        with (Path.home() / '.evolving-profile/audit/mcp-schema-drift.jsonl').open('a', encoding='utf-8') as stream:
+            stream.write(json.dumps(event, ensure_ascii=False) + '\n')
+    except Exception:
+        pass
+
 
 def reply(message_id, result=None, error=None):
     call=dict(CURRENT_TOOL_CALL or {})
@@ -1643,6 +1710,9 @@ def preference(args):
     if PREFERENCE_TOOL is None:
         return {'content':[{'type':'text','text':json.dumps({'coverage':'unavailable','errors':['guidance_runtime_import_'+str(_GUIDANCE_V1_IMPORT_ERROR)]},ensure_ascii=False)}],'isError':True}
     repo=load_repository(GUIDANCE_V1_CONFIG)
+    # Rank exactly like the prompt Hook does (shared production setting).
+    from mcp_runtime import preference_semantic_mode
+    args={**args,'semantic_recall':args.get('semantic_recall') or preference_semantic_mode()}
     result=get_preference_response(repo,args,record=not bool(args.get("entry_adapter")))
     result['adapter_version']=VERSION+'+guidance-v1'
     result['delivery']={'transport':'mcp_tool_result','host_visibility':'unknown','answer_use':'not_measured'}
@@ -2366,7 +2436,108 @@ def governed_recall(args):
     return {"content": [{"type": "text", "text": json.dumps(content, ensure_ascii=False)}], "isError": False}
 
 
-for line in (sys.stdin if __name__ == "__main__" else ()):
+# ---------------------------------------------------------------------------
+# Live code reload (2026-11-24). Hosts (Codex, Claude, Antigravity, ...) keep
+# this stdio server alive for days, so a deploy used to leave them running old
+# code (an Antigravity adapter kept the pre-fix preference reader for 4+ days).
+# Between requests we compare a fingerprint of the adapter + guidance sources;
+# when it changes we re-exec this file in place. stdin/stdout fds survive exec,
+# so the host connection is kept; input already read but not yet handled is
+# handed to the new image through EP_MCP_PENDING_STDIN, so nothing is lost.
+# ---------------------------------------------------------------------------
+_CODE_ROOTS = (Path(__file__).resolve().parent, Path(__file__).resolve().parent / 'lib', Path(GUIDANCE_V1_SRC))
+_STARTED_AT = datetime.datetime.now(datetime.timezone.utc).isoformat()
+_LAST_FINGERPRINT_CHECK = 0.0
+LAST_EXCEPTION = None
+
+
+def _code_fingerprint() -> str:
+    newest, count = 0.0, 0
+    for root in _CODE_ROOTS:
+        try:
+            for path in root.glob('*.py'):
+                if path.name.startswith('test_'):
+                    continue
+                newest = max(newest, path.stat().st_mtime); count += 1
+        except OSError:
+            continue
+    return f'{newest:.3f}:{count}'
+
+
+_BOOT_FINGERPRINT = _code_fingerprint()
+
+
+def _stdin_lines():
+    pending = os.environ.pop('EP_MCP_PENDING_STDIN', '')
+    buffer = bytes.fromhex(pending) if pending else b''
+    try:
+        fd = sys.stdin.fileno()
+    except (AttributeError, ValueError, OSError):
+        # In-memory stdin (tests, embedding): no fd to hand over, so no live reload.
+        _STDIN_STATE['reload_capable'] = False
+        if buffer:
+            yield from buffer.decode('utf-8', errors='replace').splitlines()
+        for text in sys.stdin:
+            yield text.rstrip('\n')
+        return
+    while True:
+        while b'\n' in buffer:
+            raw, buffer = buffer.split(b'\n', 1)
+            _STDIN_STATE['buffer'] = buffer
+            yield raw.decode('utf-8', errors='replace')
+        chunk = os.read(fd, 65536)
+        if not chunk:
+            if buffer.strip():
+                _STDIN_STATE['buffer'] = b''
+                yield buffer.decode('utf-8', errors='replace')
+            return
+        buffer += chunk
+        _STDIN_STATE['buffer'] = buffer
+
+
+_STDIN_STATE = {'buffer': b''}
+
+
+def _maybe_reload_code(prefix: bytes = b''):
+    """Re-exec with the current code when sources changed since this process started.
+
+    ``prefix`` is input already taken from the buffer but not yet handled (the
+    request about to be served); it is handed over in front of the buffer."""
+    global _LAST_FINGERPRINT_CHECK
+    if os.environ.get('EP_MCP_LIVE_RELOAD', '1') == '0' or not _STDIN_STATE.get('reload_capable', True):
+        return
+    now = time.monotonic()
+    if now - _LAST_FINGERPRINT_CHECK < (0.0 if prefix else 5.0):
+        return
+    _LAST_FINGERPRINT_CHECK = now
+    current = _code_fingerprint()
+    if current == _BOOT_FINGERPRINT:
+        return
+    try:
+        compile(Path(__file__).read_text(encoding='utf-8'), __file__, 'exec')
+    except (OSError, SyntaxError) as exc:
+        sys.stderr.write('ep-mcp live reload skipped, new code does not compile: ' + type(exc).__name__ + '\n')
+        return
+    try:
+        with (Path.home() / '.evolving-profile/audit/mcp-adapter-reloads.jsonl').open('a', encoding='utf-8') as stream:
+            stream.write(json.dumps({'at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'pid': os.getpid(),
+                                     'from': _BOOT_FINGERPRINT, 'to': current, 'started_at': _STARTED_AT,
+                                     'pending_bytes': len(_STDIN_STATE['buffer'])}) + '\n')
+    except OSError:
+        pass
+    sys.stdout.flush(); sys.stderr.flush()
+    env = dict(os.environ, EP_MCP_PENDING_STDIN=(prefix + _STDIN_STATE['buffer']).hex())
+    os.execve(sys.executable, [sys.executable, str(Path(__file__).resolve())], env)
+
+
+for line in (_stdin_lines() if __name__ == "__main__" else ()):
+    if not line.strip():
+        continue
+    if __name__ == "__main__":
+        # Reload BEFORE serving, so an adapter that sat idle across a deploy
+        # never answers its next request with old code: put this request back
+        # in front of the pending input and re-exec (no-op when code is current).
+        _maybe_reload_code(prefix=line.encode('utf-8') + b'\n')
     try:
         CURRENT_TOOL_CALL = None
         request = json.loads(line)
@@ -2384,6 +2555,7 @@ for line in (sys.stdin if __name__ == "__main__" else ()):
             reply(message_id, {'tools':filter_tools(tools) if governed_mode() else tools})
         elif method == "tools/call":
             params = request.get("params") or {}
+            _record_schema_drift(params.get('name'), params.get('arguments'))
             from lib.host_integration.policy import governed_mode,authorize_tool_call
             if governed_mode():
                 try:authorize_tool_call(params.get('name'),params.get('arguments',{}),{})
@@ -2518,6 +2690,7 @@ for line in (sys.stdin if __name__ == "__main__" else ()):
         else:
             reply(message_id, error={"code": -32601, "message": "Method not found"})
     except Exception as exc:
+        LAST_EXCEPTION = exc
         recovery = None
         try:
             failed_name = str((request.get('params') or {}).get('name') or '') if isinstance(request, dict) else ''
@@ -2536,5 +2709,12 @@ for line in (sys.stdin if __name__ == "__main__" else ()):
             error_payload = {"code": -32602, "message": str(exc),
                              "data": {"field": exc.field, "expected": exc.expected,
                                       "retryable_with_corrected_arguments": True}}
+        elif isinstance(exc, (ValueError, KeyError)) and re.search(r'(must be|is required|required\b|invalid[ _]|not accepted|does not take|takes one|takes no arguments|out of range|unknown tool|\d+\s*(?:\.\.|to)\s*\d+)', str(exc), re.I):
+            error_payload = {"code": -32602, "message": str(exc),
+                             "data": {"retryable_with_corrected_arguments": True}}
         if recovery is not None: error_payload['data'] = {'recovery': recovery, 'ep_history_verification': 'failed'}
         reply(request.get("id") if "request" in locals() else None, error=error_payload)
+    finally:
+        LAST_EXCEPTION = None
+        if __name__ == "__main__":
+            _maybe_reload_code()

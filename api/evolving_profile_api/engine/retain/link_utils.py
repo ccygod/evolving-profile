@@ -58,7 +58,7 @@ def _entity_resolve_flag(ent) -> bool:
 # Maximum number of temporal links to keep per unit (from_unit_id).
 # Retrieval only reads top 10-20 per unit via LATERAL join, so keeping
 # more is wasted storage and write amplification.
-MAX_TEMPORAL_LINKS_PER_UNIT = 20
+MAX_TEMPORAL_LINKS_PER_UNIT = 10  # = retrieval per_source_limit; links ranked >10 are never read (2026-11-24)
 
 
 def _cap_links_per_unit(links: list[tuple], max_per_unit: int = MAX_TEMPORAL_LINKS_PER_UNIT) -> list[tuple]:

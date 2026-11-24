@@ -122,6 +122,26 @@ def record_stdout(result,root=DEFAULT_ROOT):
         _save(path,state)
 
 
+def _sweep_expired(root):
+    """Drop expired reference manifests and their lock files (never source memories).
+
+    read_page already refuses manifests older than TTL_SECONDS, so anything past
+    it is unreadable. Until 2026-11-24 only discover() swept and search() (the
+    user_research path) never did, so 770 dead manifests piled up.
+    """
+    now=time.time()
+    try:
+        entries=list(Path(root).iterdir())
+    except OSError:
+        return
+    for old in entries:
+        if old.suffix not in ('.json','.lock'):continue
+        try:
+            if now-old.stat().st_mtime>TTL_SECONDS:old.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def discover(bank,query,api,root=DEFAULT_ROOT,page_size=8,relevance_policy=None):
     if not isinstance(query,str) or not query.strip():raise ValueError('query is required')
     if len(query.encode())>1024*1024:raise ValueError('query exceeds 1 MiB transport budget')
@@ -130,9 +150,7 @@ def discover(bank,query,api,root=DEFAULT_ROOT,page_size=8,relevance_policy=None)
         'created_at_iso':dt.datetime.now(dt.timezone.utc).isoformat(),'strategy':'official_iterative_discovery',
         'semantic_coverage':'not_independently_verified','host_visibility':'unknown'}
     _save(path,state)
-    # Only ephemeral reference manifests expire here, never source memories.
-    for old in root.glob('*.json'):
-        if time.time()-old.stat().st_mtime>TTL_SECONDS:old.unlink(missing_ok=True)
+    _sweep_expired(root)
     try:
         response=api('/v1/default/banks/'+urllib.parse.quote(bank,safe='')+'/reflect',
             {'query':query,'budget':'high','max_tokens':2400,
@@ -190,6 +208,7 @@ def search(bank,query,api,root=DEFAULT_ROOT,facets=None,budget='high',max_tokens
     if temporal_window is not None:
         temporal_window=_beijing_window(temporal_window)
     queries=list(dict.fromkeys(queries));root=Path(root);rid=str(uuid.uuid4());path=root/(rid+'.json')
+    _sweep_expired(root)
     start=time.monotonic()
     state={'research_id':rid,'bank':bank,'query':query,'status':'running','created_at':time.time(),
         'created_at_iso':dt.datetime.now(dt.timezone.utc).isoformat(),'strategy':'official_parallel_recall',

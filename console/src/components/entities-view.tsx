@@ -1,6 +1,7 @@
 "use client";
 
 import { ActionButton } from "@/components/ui/action-button";
+import { WindowLoadMore } from "./graph-window-controls";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useTranslations } from "next-intl";
@@ -54,6 +55,10 @@ export function EntitiesView() {
   const [viewMode, setViewMode] = useState<ViewMode>("relations");
   const [graphData, setGraphData] = useState<EntityGraphResponse | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
+  // Constellation loads in steps (like the facts list) instead of 2000 at once.
+  const GRAPH_STEP = 300;
+  const [graphLimit, setGraphLimit] = useState(GRAPH_STEP);
+  const [graphLoadingMore, setGraphLoadingMore] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -91,7 +96,7 @@ export function EntitiesView() {
       setSelectedEntity(result);
     } catch (error) {
       // Error toast is shown automatically by the API client interceptor
-
+    
       throw error;
     } finally {
       setLoadingDetail(false);
@@ -104,20 +109,23 @@ export function EntitiesView() {
     return loadEntities(newPage, true);
   };
 
-  const loadGraph = useCallback(async () => {
+  const loadGraph = useCallback(async (limit: number = GRAPH_STEP, more = false) => {
     if (!currentBank) return;
-    setGraphLoading(true);
+    if (more) setGraphLoadingMore(true);
+    else setGraphLoading(true);
     try {
       const result = await client.getEntityGraph({
         bank_id: currentBank,
-        limit: 2000,
+        limit,
         min_count: 1,
       });
+      setGraphLimit(limit);
       setGraphData(result);
     } catch (error) {
       // Error toast is shown automatically by the API client interceptor
     } finally {
-      setGraphLoading(false);
+      if (more) setGraphLoadingMore(false);
+      else setGraphLoading(false);
     }
   }, [currentBank]);
 
@@ -251,6 +259,23 @@ export function EntitiesView() {
         </div>
       </div>
 
+      {viewMode === "relations" && graphData && !graphLoading && (
+        <div className="mb-3 text-sm text-muted-foreground">
+          <WindowLoadMore
+            shown={graphData.nodes?.length ?? 0}
+            total={graphData.total_entities ?? total}
+            windowed={{
+              data: graphData,
+              error: null,
+              loading: false,
+              loadingMore: graphLoadingMore,
+              hasMore: (graphData.nodes?.length ?? 0) >= graphLimit && (graphData.total_entities ?? total) > (graphData.nodes?.length ?? 0),
+              loadMore: () => void loadGraph(graphLimit + GRAPH_STEP, true),
+              refresh: () => void loadGraph(GRAPH_STEP),
+            }}
+          />
+        </div>
+      )}
       {viewMode === "relations" && (
         <div className="border border-border rounded-lg overflow-hidden">
           {graphLoading ? (

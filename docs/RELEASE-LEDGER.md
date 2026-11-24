@@ -1,5 +1,12 @@
 # Evolving Profile Release Ledger
 
+### 2026-11-24：6.2.0 存储治理与可靠性
+
+- 产品版本：6.2.0（VERSION 与 config/release-manifest.json）。基线：`main` 上的 6.1.0 后续修复 `7be2093`。
+- 本次更新：冷热分层、半精度向量迁移、时间关系上限、事件日志压缩归档、研究工作区过期修复、召回轨迹瘦身、存储基准；MCP 热更新与失败审计；偏好入口一致与 scope 约束；Console 星座图统一与加载更多。详见[6.2.0 说明](RELEASE-NOTES-6.2.0.md)。
+- 本地验证：Host Adapter 1841、Guidance 141、v6 24、API 单元 68、Console 669 通过；TypeScript 与生产构建通过；API DB 集成测试 89 项未运行（无独立测试库）。
+- GitHub 状态：推送 `main`、`release/6.2.0`、Tag `v6.2.0` 至 gtkj 与 ccygod；不创建 PR 与 GitHub Release。最终 SHA 以远端读回为准。
+
 ### 2026-10-31：5.1.4 AI 自动修复与队列闭环（本地准备）
 
 - 产品版本：5.1.4，以根目录 VERSION 和 config/release-manifest.json 为准。

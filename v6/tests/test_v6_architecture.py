@@ -202,7 +202,16 @@ def test_load_router_from_data_root_and_production_jobs(tmp_path):
         "retention-worker", "context-worker", "guidance-worker",
         "topic-catalog", "topic-semantics", "context-links", "events-sync", "incremental-sync", "entity-graph",
         "entity-state", "artifact-index", "ontology-hygiene", "sqlite-hygiene", "pg-analyze", "ledger-bank-bridge",
+        "events-retention", "memory-tiering",
     }
+    # Without a bank there is nothing to tier, so the job is not scheduled.
+    import os as _os
+    saved = _os.environ.pop("EVOLVING_PROFILE_BANK_ID", None)
+    try:
+        assert "memory-tiering" not in {j.name for j in build_production_jobs(tmp_path, bank_id="")}
+    finally:
+        if saved is not None:
+            _os.environ["EVOLVING_PROFILE_BANK_ID"] = saved
 
 
 def test_model_router_parallel_race_and_round_robin():

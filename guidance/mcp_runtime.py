@@ -14,6 +14,22 @@ from runtime_settings import load_runtime_settings, module_enabled
 
 GUIDANCE_SETTINGS_PATH = Path(os.environ.get("EVOLVING_PROFILE_GUIDANCE_SETTINGS", str(Path.home() / ".evolving-profile/config/guidance-settings.json")))
 
+def preference_semantic_mode() -> str:
+    """Single source of truth for production preference retrieval.
+
+    Both production entry points — the prompt Hook (guidance_entry) and the MCP
+    user_preference tool — must rank preferences the same way, so neither may
+    hard-code its own semantic flag. Setting: guidance-settings.json
+    "semantic_recall": "local" (default) | "off". Core ranking stays
+    deterministic for tests/CLI unless a caller passes the flag.
+    """
+    try:
+        value = json.loads(GUIDANCE_SETTINGS_PATH.read_text(encoding="utf-8")).get("semantic_recall", "local")
+    except (OSError, ValueError, TypeError, AttributeError):
+        value = "local"
+    return value if value in ("local", "off") else "local"
+
+
 def guidance_settings() -> dict:
     try:
         value = json.loads(GUIDANCE_SETTINGS_PATH.read_text(encoding="utf-8"))

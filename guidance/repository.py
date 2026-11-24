@@ -49,6 +49,26 @@ class GuidanceRepository:
               superseded_by TEXT, audit_json TEXT NOT NULL, PRIMARY KEY(unit_id,revision));
             CREATE TABLE IF NOT EXISTS idempotency (key TEXT NOT NULL, operation TEXT NOT NULL, result_json TEXT NOT NULL, created_at REAL NOT NULL, PRIMARY KEY(key,operation));
             """)
+            # Storage-level data contract (2026-11-24). Every writer — publisher,
+            # corrections, migrations, ad-hoc scripts — goes through these, so a
+            # unit can no longer lose its dict scope or be rewritten in place.
+            #  * scope must be a JSON object (scope_level carries global/project/task);
+            #  * an active revision's payload is immutable: changes need a new
+            #    revision (deactivating with a withdrawal note is still allowed).
+            db.executescript("""
+            CREATE TRIGGER IF NOT EXISTS unit_revisions_scope_object_insert
+              BEFORE INSERT ON unit_revisions
+              WHEN json_type(NEW.payload_json, '$.scope') IS NOT 'object'
+              BEGIN SELECT RAISE(ABORT, 'invalid_guidance_scope: scope must be a JSON object; put global/project_scoped/task_local in scope_level'); END;
+            CREATE TRIGGER IF NOT EXISTS unit_revisions_scope_object_update
+              BEFORE UPDATE OF payload_json ON unit_revisions
+              WHEN json_type(NEW.payload_json, '$.scope') IS NOT 'object'
+              BEGIN SELECT RAISE(ABORT, 'invalid_guidance_scope: scope must be a JSON object; put global/project_scoped/task_local in scope_level'); END;
+            CREATE TRIGGER IF NOT EXISTS unit_revisions_active_payload_immutable
+              BEFORE UPDATE OF payload_json ON unit_revisions
+              WHEN OLD.active = 1 AND NEW.active = 1 AND NEW.payload_json IS NOT OLD.payload_json
+              BEGIN SELECT RAISE(ABORT, 'unit_revision_immutable: write a new revision instead of editing an active one'); END;
+            """)
 
     def _meta(self, key: str) -> str | None:
         with self._conn() as db:
