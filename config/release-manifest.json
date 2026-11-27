@@ -1,8 +1,8 @@
 {
   "product": "Evolving Profile",
-  "product_version": "6.2.1",
+  "product_version": "6.2.2",
   "release_channel": "stable",
-  "build_id": "ep621-prompt-journey-map",
+  "build_id": "ep622-fast-prompt-list",
   "schema_versions": {
     "runtime_settings": "1",
     "backup_settings": "1",

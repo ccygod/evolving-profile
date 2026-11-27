@@ -203,13 +203,14 @@ README 应该表达的就是这个差异：EP 难以被一个记忆后端替代�
 
 ## 哪些较成熟，哪些还需验证
 
-**本版为 EP 6.2.1 正式版；不同平台的验证边界仍单独标注。**
+**本版为 EP 6.2.2 正式版；不同平台的验证边界仍单独标注。**
 
 6.2 新增**存储治理**：检索从不使用的记忆不再占用向量索引，原始日志不再无限增长，所有节省都可以恢复（见[越用越省的存储](#ep-storage)）。
 - 低价值与重复记忆的**冷热分层**（`v6/memory_tiering.py`）、**半精度向量**（`halfvec`，迁移 `f3a4b5c6d7e8`）、与检索实际读取数量一致的时间关系上限，以及旧工具调用事件的**压缩归档与校验**（`v6/events_retention.py`）。
 - **MCP 适配器热更新**：每个请求处理前检查代码版本；失败按类型审计，参数错误返回 JSON-RPC `-32602`；新增不记录参数值的 Schema 偏差审计。
 - Hook 与 MCP 两条入口**使用同一偏好检索模式**；偏好 `scope` 结构与已生效版本由 SQLite 触发器强制约束。
 - 用户记忆与智能体记忆统一星座图风格，所有图谱视图支持**加载更多**。
+- 6.2.2：链路页 Prompt 列表加载降到 1 秒以内（改为以控制台本地按原生记录核验的列表为主），仓库及其历史中的真实地名、机构名、人名全部换成示例名。
 - 6.2.1：本仓库与实际运行的安装逐模块对齐，补齐数据驱动的 **Prompt 旅程**链路图、Worker 租约、Bank 选择、全量检索面板等约 140 个此前未发布的文件；新增 `scripts/release-parity.py`，发版时有遗漏会直接拦下。
 
 6.2 建立在 6.1 之上，6.1 在 v6 统一架构基础上完成了**跨平台自适应内核、数据本体治理与前后端全链路对齐**：
@@ -220,7 +221,7 @@ README 应该表达的就是这个差异：EP 难以被一个记忆后端替代�
 
 EP 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发，见 [NOTICE.md](NOTICE.md)。完整变更见 [CHANGELOG-6.2.md](CHANGELOG-6.2.md) · [CHANGELOG-6.1.md](CHANGELOG-6.1.md) · [CHANGELOG-6.0.md](CHANGELOG-6.0.md)，架构说明见 [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md)（历史 5.1 变更见 [CHANGELOG-5.1.md](CHANGELOG-5.1.md)）。
 
-产品版本以 [VERSION](VERSION) 为唯一权威，构建信息见 [发行清单](config/release-manifest.json)。当前 6.2.1 文档与代码位于 `main` 及 [`release/6.2.0` 分支](https://github.com/gtkj/evolving-profile/tree/release/6.2.0)（标签 [`v6.2.1`](https://github.com/gtkj/evolving-profile/releases/tag/v6.2.1)，个人镜像见 [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)）。
+产品版本以 [VERSION](VERSION) 为唯一权威，构建信息见 [发行清单](config/release-manifest.json)。当前 6.2.2 文档与代码位于 `main` 及 [`release/6.2.0` 分支](https://github.com/gtkj/evolving-profile/tree/release/6.2.0)（标签 [`v6.2.2`](https://github.com/gtkj/evolving-profile/releases/tag/v6.2.2)，个人镜像见 [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)）。
 
 | 能力 | 当前成熟度与证据 | 仍需验证 |
 | --- | --- | --- |
@@ -368,7 +369,7 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 
 完整本机链路要分开验收：
 
-1. **构建：**运行安装器，确认它从 `VERSION` 报出 `EP 6.2.1`。
+1. **构建：**运行安装器，确认它从 `VERSION` 报出 `EP 6.2.2`。
 2. **API：**启动 `8888`，要求 `curl --fail http://127.0.0.1:8888/health` 成功。
 3. **Controller：**启动 `12079`，要求 `curl --fail http://127.0.0.1:12079/v1/status` 成功。
 4. **Console：**启动 `9999`，打开所选语言页面，创建/选择自己的 Bank，并实际点击健康和配置页面。
@@ -382,7 +383,7 @@ Session、后续纠正和原话，再单独参考最终文档的呈现偏好。�
 [选择具体宿主](docs/HOST-SETUP-中文.md) → [复制对应 Agent 提示词](docs/AGENT-SETUP-中文.md)。
 **安装本候选包：**先看[候选版安装入口](docs/CANDIDATE-SETUP.md)。
 **给 Agent 读：**接入不等于会使用，继续阅读[Agent 日常操作协议](docs/AGENT-USAGE-中文.md)。
-本工作树是 **6.2.1** 发行线，当前文档分支为 `release/6.2.0`（与 `main` 同步）；产品版本始终读 [VERSION](VERSION)，
+本工作树是 **6.2.2** 发行线，当前文档分支为 `release/6.2.0`（与 `main` 同步）；产品版本始终读 [VERSION](VERSION)，
 旧的 `v5.1.x` 标签仅作历史归档，不能根据旧 Tag 判断最新版。
 
 ### 环境要求
