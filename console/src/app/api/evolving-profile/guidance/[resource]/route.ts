@@ -24,6 +24,7 @@ async function readJsonDirectory(directory: string) {
 }
 
 import { samePromptBinding } from "@/lib/prompt-binding";
+import { SYNTHETIC_SOURCES, syntheticHostRows } from "@/lib/host-adapters.server";
 
 function guidanceReceiptFromRow(row: any) {
   const result = row?.result ?? row?.rendered_guidance ?? {};
@@ -50,10 +51,15 @@ async function localPromptList(request: NextRequest) {
   try {
     const raw=(await readFile(PROMPT_INGRESS_PATH,"utf8")).trim().split("\n").slice(-2000).flatMap(line=>{try{const row=JSON.parse(line);return row && typeof row==='object' && !Array.isArray(row) ? [row] : []}catch{return[]}});
     const resolver = new PromptOriginResolver([EP_HOST_SESSIONS, process.env.EVOLVING_PROFILE_HOST_ARCHIVED_SESSIONS_ROOT || (EP_STATE_ROOT === EP_DEFAULT_STATE_ROOT ? path.join(homedir(), '.codex/archived_sessions') : epStatePath('archived-host-sessions'))]);
-    const candidates = selectPromptOccurrences([...raw, ...await readReplayPrompts()], ['codex-userpromptsubmit', 'codex_host_replay']);
-    const originRows=await resolver.resolveRows(candidates,{pageOffset:cursor,pageLimit:limit,host,queryText:terms.join(' '),promptSource});
+    // UI host ids differ from the host_id values written by hooks; map them so the dropdown matches real rows.
+    const HOST_ALIASES: Record<string, string[]> = { claude_code_desktop_local: ['claude-desktop'], claude_desktop_chat: ['claude-desktop'], claude_code_cli: ['claude-code'] };
+    const hostKey = host.toLowerCase();
+    const hostIds = hostKey === 'all' ? null : (HOST_ALIASES[hostKey] ?? [hostKey]);
+    const hostMatches = (row: any) => !hostIds || hostIds.includes(String(row.host_id || 'unknown').toLowerCase());
+    const candidates = selectPromptOccurrences([...raw, ...await readReplayPrompts(), ...await syntheticHostRows()], ['codex-userpromptsubmit', 'codex_host_replay', 'claude-desktop-userpromptsubmit', 'trae-userpromptsubmit', ...SYNTHETIC_SOURCES]).filter(hostMatches);
+    const originRows=await resolver.resolveRows(candidates,{pageOffset:cursor,pageLimit:limit,host:'all',queryText:terms.join(' '),promptSource});
     const classified = originRows.filter(row =>
-      (host.toLowerCase() === 'all' || String(row.host_id || 'codex').toLowerCase() === host.toLowerCase()) &&
+      hostMatches(row) &&
       (!terms.length || terms.every(term => row.prompt_preview.includes(term))));
     const { rows, ...sourceProjection } = promptPopulationProjection(classified, promptSource);
     const [routeReceipts, guidanceReceipts] = await Promise.all([readJsonDirectory(MEMORY_ROUTE_RECEIPTS_PATH), readJsonDirectory(GUIDANCE_ENTRY_RECEIPTS_PATH)]);
@@ -64,7 +70,7 @@ async function localPromptList(request: NextRequest) {
         prompt_id: `${row.prompt_fingerprint}:${row.at}`,
         at: row.at,
         user_prompt: row.prompt_preview || "",
-        source: row.host_id || "codex",
+        source: row.host_id || "unknown",
         origin_kind: row.origin_kind,
         origin_status: row.origin_status,
         origin_evidence: row.origin_evidence,

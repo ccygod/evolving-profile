@@ -15,8 +15,8 @@ def validate_atomic_model(repo: GuidanceRepository, model: dict) -> None:
     if any(model.get(key) in (None, "", []) for key in required) or model.get("status") != "active":
         raise ModelPublicationError("invalid_atomic_model_contract")
     dimensions = {str(value) for value in model.get("dimensions") or []}
-    if len(dimensions) < 2:
-        raise ModelPublicationError("atomic_model_requires_two_dimensions")
+    if len(dimensions) < 1:
+        raise ModelPublicationError("atomic_model_requires_dimension")
     active_units = {(unit["id"], unit["revision"]): unit for unit in repo.active_units()}
     refs = {
         (ref.get("id"), ref.get("revision"))
@@ -29,7 +29,7 @@ def validate_atomic_model(repo: GuidanceRepository, model: dict) -> None:
         str(active_units[ref].get("primary_category") or "")
         for ref in refs if ref in active_units and active_units[ref].get("primary_category")
     }
-    if len(referenced_dimensions) < 2 or not dimensions.issubset(referenced_dimensions):
+    if len(referenced_dimensions) < 1 or not dimensions.issubset(referenced_dimensions):
         raise ModelPublicationError("atomic_model_dimensions_not_supported")
 
 

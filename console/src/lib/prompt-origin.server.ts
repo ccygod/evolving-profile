@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { open, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { classifyPromptOrigin } from './prompt-origin';
+import { verifyClaudeNativePrompt } from './claude-native-witness.server';
 import { nativeTurnWitnesses,scanByteBudget,hasIndexedPrompt,advanceIndexedSource } from './native-prompt-witness.server';
 const headerCache=new Map<string,{stamp:string;result:{metadata:any;revision?:string;error?:string}}>();
 
@@ -69,6 +70,7 @@ export class PromptOriginResolver {
     } catch { return { metadata: null, error: 'native_source_unavailable' }; }
   }
   async resolve(row: any) {
+    if (row.source === 'claude-desktop-userpromptsubmit' || (row.source === 'codex-userpromptsubmit' && String(row.host_id || '') === 'claude-desktop')) return verifyClaudeNativePrompt(row, this.budget.deadline + 4000);
     const explicit = row.transcript_path;
     if (explicit !== undefined && explicit !== null && (typeof explicit !== 'string' || !explicit.trim() || explicit.includes('\u0000'))) return classifyPromptOrigin(row, null, { error: 'native_source_path_invalid' });
     const paths = explicit !== undefined && explicit !== null ? [explicit] : await this.paths(String(row.session_id || ''));
@@ -117,7 +119,7 @@ export class PromptOriginResolver {
       priorities.push({position,row,indexed,hint});
     }
     const terms=String(options.queryText || '').split(/\s+/).filter(Boolean),host=String(options.host || 'all').toLowerCase(),source=String(options.promptSource || 'natural').toLowerCase();
-    const eligible=priorities.filter(entry=>(host==='all' || String(entry.row.host_id || 'codex').toLowerCase()===host) && (!terms.length || terms.every(term=>entry.row.prompt_preview.includes(term))) &&
+    const eligible=priorities.filter(entry=>(host==='all' || String(entry.row.host_id || 'unknown').toLowerCase()===host) && (!terms.length || terms.every(term=>entry.row.prompt_preview.includes(term))) &&
       (!['natural','human'].includes(source) || entry.hint==='human' || entry.hint==='unknown' && !entry.row.transcript_path));
     const offset=Math.max(0,options.pageOffset || 0),limit=Math.max(1,Math.min(50,options.pageLimit || 20)),pagePositions=new Set(eligible.slice(offset,offset+limit).map(entry=>entry.position));
     for(const entry of priorities)entry.priority=pagePositions.has(entry.position)?(entry.indexed?-2:-1):entry.indexed?0:entry.hint==='human'?1:entry.hint==='unknown' && !entry.row.transcript_path?2:3;

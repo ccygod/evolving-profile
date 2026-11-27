@@ -23,13 +23,13 @@ async function localHookBinding(promptId: string) {
 
 async function localHookReceipts(promptId: string) {
   const binding = await localHookBinding(promptId);
-  if (!binding?.turn_id) return [];
+  if (!binding?.turn_id && !binding?.hook_invocation_id) return [];
   try {
     const files = await readdir(HOOK_RECEIPTS_PATH);
     const rows = await Promise.all(files.filter((file) => file.endsWith(".json")).map(async (file) => {
       try { return JSON.parse(await readFile(path.join(HOOK_RECEIPTS_PATH, file), "utf8")); } catch { return null; }
     }));
-    return rows.filter((row: any) => row?.turn_id === binding.turn_id || row?.hook_invocation_id === binding.hook_invocation_id).flatMap((hook: any) => {
+    return rows.filter((row: any) => (Boolean(binding.turn_id) && row?.turn_id === binding.turn_id) || (Boolean(binding.hook_invocation_id) && row?.hook_invocation_id === binding.hook_invocation_id)).flatMap((hook: any) => {
       const receipt = hook?.entry_guidance?.agent_process_memory;
       if (!receipt || receipt.required !== true) return [];
       const base = { prompt_id: promptId, session_id: binding.session_id ?? null, project_id: null, lane: "agent_process" as const, source_type: "agent_process_memory", started_at: hook.at ?? null, finished_at: hook.at ?? null };

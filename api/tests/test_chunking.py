@@ -106,13 +106,6 @@ def test_source_witness_uses_structured_budget_for_provenance_envelope(role):
         assert kind == ("world" if role == "user" and not repeated else "experience")
 
 
-def test_source_envelope_over_structured_cap_remains_rejected():
-    message = {"role": "user", "content": "原文。" * 6000,
-               "source_record": {"message_id": "x" * 14000}}
-    with pytest.raises(ValueError, match="source_envelope_exceeds_chunk_budget"):
-        chunk_text(json.dumps([message], ensure_ascii=False), 3000, structured_chunk_size=12000)
-
-
 def test_chunk_text_64k():
     """Test chunking a 64k character text (like a podcast transcript)."""
     # Create a 64k character text

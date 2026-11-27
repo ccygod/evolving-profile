@@ -1,7 +1,7 @@
 """Store memory_units.embedding as halfvec (16-bit floats)
 
-Revision ID: e2f3a4b5c6d7
-Revises: d1e2f3a4b5c6
+Revision ID: f3a4b5c6d7e8
+Revises: e2f3a4b5c6d7
 Create Date: 2026-11-24
 
 Embeddings are normalised sentence vectors; 16-bit precision does not change
@@ -23,8 +23,8 @@ from sqlalchemy import text
 
 from evolving_profile_api.alembic._dialect import run_for_dialect
 
-revision: str = "e2f3a4b5c6d7"
-down_revision: str | Sequence[str] | None = "d1e2f3a4b5c6"
+revision: str = "f3a4b5c6d7e8"
+down_revision: str | Sequence[str] | None = "e2f3a4b5c6d7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -84,7 +84,26 @@ def _convert(target: str, source_ops: str, target_ops: str) -> None:
         op.execute(definition.replace(source_ops, target_ops))
 
 
+def _ensure_worker_lease_columns() -> None:
+    """6.2.0 shipped this migration under id e2f3a4b5c6d7, which belongs to the
+    worker-lease migration. Databases stamped by 6.2.0 therefore never received
+    the lease columns; add them here (no-op where they already exist)."""
+    prefix = f'"{_schema()}".'
+    for ddl in (
+        "ADD COLUMN IF NOT EXISTS lease_id TEXT",
+        "ADD COLUMN IF NOT EXISTS claim_version INTEGER NOT NULL DEFAULT 0",
+        "ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ",
+        "ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ",
+    ):
+        op.execute(f"ALTER TABLE {prefix}async_operations {ddl}")
+    op.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_async_operations_lease_expiry ON {prefix}async_operations "
+        "(lease_expires_at) WHERE status = 'processing' AND lease_expires_at IS NOT NULL"
+    )
+
+
 def _pg_upgrade() -> None:
+    _ensure_worker_lease_columns()
     if os.environ.get("EVOLVING_PROFILE_EMBEDDING_STORAGE", "halfvec") == "vector":
         return
     _convert("halfvec", "vector_cosine_ops", "halfvec_cosine_ops")

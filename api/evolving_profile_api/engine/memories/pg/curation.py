@@ -251,7 +251,11 @@ async def list_memory_units(
                updated_at, source_memory_ids, {curation_cols}
         FROM {source_table}
         {where_clause}
-        ORDER BY mentioned_at DESC NULLS LAST, created_at DESC
+        -- ``id`` makes the order total. Facts retained together share the same
+        -- timestamps (up to a few hundred per tie), and without a tie-breaker
+        -- Postgres may order ties differently on every query, so LIMIT/OFFSET
+        -- pages repeat some rows and skip others.
+        ORDER BY mentioned_at DESC NULLS LAST, created_at DESC, id
         LIMIT {limit_param} OFFSET {offset_param}
     """,
         *query_params,

@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { BankSelector } from "@/components/bank-selector";
+import { BankAccessNotice } from "@/components/bank-access-notice";
 import { Sidebar } from "@/components/sidebar";
 import { DataView } from "@/components/data-view";
 import { normalizeDataSubTab, type DataSubTab } from "@/lib/data-subtab";
@@ -15,6 +16,7 @@ import { SearchDebugView } from "@/components/search-debug-view";
 import { BankProfileView } from "@/components/bank-profile-view";
 import { RuntimeSectionsView } from "@/components/runtime-sections-view";
 import { HostIntegrationSettings } from "@/components/host-integration-settings";
+import { ExhaustiveSearchPanel } from "@/components/exhaustive-search-panel";
 import { OperationalOverview } from "@/components/operational-overview";
 import { MemoryDefenseSection } from "@/components/memory-defense-section";
 import { BankStatsView } from "@/components/bank-stats-view";
@@ -91,16 +93,18 @@ export default function BankPage() {
   const tCommon = useTranslations("common");
   const tAction = useTranslations("actionFeedback");
   const tHosts = useTranslations("hostIntegrations");
+  const tBankScope = useTranslations("bankScope");
   const { features } = useFeatures();
-  const { currentBank: bankId, setCurrentBank, loadBanks } = useBank();
+  const { currentBank: bankId, setCurrentBank, loadBanks, selectionStatus,
+    requestedBank,primaryBank,primaryReady,refreshSelection } = useBank();
 
-  const rawView = searchParams.get("view") || "profile";
+  const rawView = searchParams?.get("view") || "profile";
   // The former Reflect screen issued foreground model calls. Keep old bookmarks
   // usable while routing them to the read-only observable chain instead.
   const view = (rawView === "reflect" ? "flow" : rawView) as NavItem;
-  const rawSubTab = searchParams.get("subTab");
+  const rawSubTab = searchParams?.get("subTab") ?? null;
   const subTab: DataSubTab = normalizeDataSubTab(rawSubTab);
-  const bankConfigTab = (searchParams.get("bankConfigTab") || "general") as BankConfigTab;
+  const bankConfigTab = (searchParams?.get("bankConfigTab") || "general") as BankConfigTab;
   const observationsEnabled = features?.observations ?? false;
   const bankConfigEnabled = features?.bank_config_api ?? false;
   const auditLogEnabled = features?.audit_log ?? false;
@@ -206,6 +210,13 @@ export default function BankPage() {
     }
   };
 
+  if(selectionStatus!=="ready" || !bankId) return <div className="min-h-screen bg-background">
+    <BankSelector />
+    <main className="p-3 sm:p-6"><BankAccessNotice status={selectionStatus} requestedBank={requestedBank}
+      primaryBank={primaryBank} primaryReady={primaryReady} onRetry={refreshSelection}
+      returnQuery={`?${searchParams?.toString() ?? ""}`} /></main>
+  </div>;
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <BankSelector />
@@ -215,6 +226,7 @@ export default function BankPage() {
 
         <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
           <div className="p-3 sm:p-6">
+            {view === "profile" && <p className="mb-4 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{tBankScope("notice")}</p>}
             {/* Bank Configuration Tab */}
             {view === "profile" && (
               <div>
@@ -494,7 +506,12 @@ export default function BankPage() {
                       <RuntimeSectionsView section="runtime" />
                     </div>
                   )}
-                  {bankConfigTab === "memory" && <RuntimeSectionsView section="memory" />}
+                  {bankConfigTab === "memory" && (
+                    <div className="space-y-6">
+                      <ExhaustiveSearchPanel />
+                      <RuntimeSectionsView section="memory" />
+                    </div>
+                  )}
                   {bankConfigTab === "models" && <RuntimeSectionsView section="models" />}
                   {bankConfigTab === "rag" && <RuntimeSectionsView section="rag" />}
                   {bankConfigTab === "providers" && <RuntimeSectionsView section="providers" />}

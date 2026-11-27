@@ -274,7 +274,7 @@ export function TopologyEngineLab({ nodes, english = false }: Props) {
                 type="button"
                 aria-label={node ? `${english ? "Open receipt: " : "打开回执："}${label}` : label}
                 title={node ? `${label}\n${nodeMetric(id,node.data,english) || ""}` : label}
-                className={`reference-unified-node ${node ? `reference-svg-node-${node.data.lane}` : "reference-label-node"} ${compact ? "is-compact" : ""}`}
+                className={`reference-unified-node ${node ? `reference-svg-node-${node.data.lane}` : "reference-label-node"} ${compact ? "is-compact" : ""} ${node && node.data.status === "not_observed" && !node.data.preparedCount ? "is-unobserved" : ""}`}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   setEditing(id);
@@ -348,7 +348,7 @@ export function TopologyEngineLab({ nodes, english = false }: Props) {
                 ? "Live projection"
                 : "实时投影"}
           </span>
-          <span role="status" data-testid="topology-layout-status">{!layoutReady ? (english?"Loading layout…":"正在加载布局…") : layoutWarning ? (english?"Shared layout unavailable · cached/default view":"共享布局暂不可用 · 显示缓存或默认布局") : shared.revision ? (english?`Shared layout v${shared.revision}`:`共享布局 v${shared.revision}`) : (english?"Calibrated default layout":"已校准的默认布局")}</span>
+          <span data-testid="topology-unobserved-legend" className="text-xs text-muted-foreground">{english?"Dimmed node = no call receipt for this prompt":"变灰节点 = 本轮未取得调用回执"}</span><span role="status" data-testid="topology-layout-status">{!layoutReady ? (english?"Loading layout…":"正在加载布局…") : layoutWarning ? (english?"Shared layout unavailable · cached/default view":"共享布局暂不可用 · 显示缓存或默认布局") : shared.revision ? (english?`Shared layout v${shared.revision}`:`共享布局 v${shared.revision}`) : (english?"Calibrated default layout":"已校准的默认布局")}</span>
           <a
             className="reference-anchor-link"
             aria-label={editMode ? (english ? "Exit layout editor" : "退出布局编辑") : (english ? "Edit layout" : "编辑布局")}

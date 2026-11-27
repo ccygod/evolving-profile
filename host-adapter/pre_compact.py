@@ -30,6 +30,12 @@ def main():
     # Codex PreCompact cannot inject additionalContext. The next compact/resume
     # SessionStart reads this durable checkpoint and performs the recovery.
     render_checkpoint(str(hook_input.get("session_id") or "unknown"), hook_input.get("cwd") or "unknown")
+    # Compaction may drop guidance the Agent was given earlier; deliver it afresh.
+    try:
+        from guidance_entry import reset_session_delivery
+        reset_session_delivery(str(hook_input.get("session_id") or "unknown"))
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

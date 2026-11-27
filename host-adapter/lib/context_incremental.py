@@ -602,7 +602,7 @@ class ContextIncremental:
     def __init__(self, state_root, session_root, *, debounce=30, capacity=1024, lease_seconds=900, bank_id=None, session_ids=None, new_after=None):
         self.root = Path(state_root).expanduser() / 'context'
         self.root.mkdir(parents=True, exist_ok=True)
-        self.session_root = Path(session_root).expanduser()
+        self.session_root = tuple(Path(r).expanduser() for r in session_root) if isinstance(session_root, (list, tuple)) else Path(session_root).expanduser()
         self.index = self.root / 'context-index.json'
         self.db_path = self.root / 'context-incremental.sqlite'
         self.progress_path = self.root / 'context-pipeline-progress.json'

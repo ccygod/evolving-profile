@@ -88,10 +88,13 @@ class McpToolActivityTests(unittest.TestCase):
     def setUpClass(cls):
         cls.module = importlib.import_module('evolving_profile_controller_mcp')
 
-    def _invoke_reply(self, home, tool_name, arguments, result):
+    def _invoke_reply(self, home, tool_name, arguments, result, verbose=False):
+        # ``verbose`` returns the full recorded value; the default is the
+        # Agent-facing projection (see test_host_projection).
         output=io.StringIO()
         with patch.object(self.module.Path,'home',return_value=Path(home)), \
              patch.object(self.module,'CURRENT_TOOL_CALL',{'name':tool_name,'arguments':arguments}), \
+             patch.object(self.module,'RESPONSE_VERBOSE',verbose), \
              contextlib.redirect_stdout(output):
             self.module.reply('id-1',result=result)
         return json.loads(output.getvalue())['result']
@@ -112,7 +115,7 @@ class McpToolActivityTests(unittest.TestCase):
     def test_tool_receipt_identifies_the_loaded_adapter_build(self):
         with tempfile.TemporaryDirectory() as home:
             result = {'content': [{'type': 'text', 'text': json.dumps({'memories': []})}]}
-            payload = self._invoke_reply(home, 'recall', {}, result)
+            payload = self._invoke_reply(home, 'recall', {}, result,verbose=True)
         value = json.loads(payload['content'][0]['text'])
         digest = hashlib.sha256(Path(self.module.__file__).read_bytes()).hexdigest()
         self.assertEqual(value.get('adapter_build_sha256'), digest)
@@ -213,7 +216,7 @@ class McpToolActivityTests(unittest.TestCase):
             ])+'\n',encoding='utf-8')
             result={'content':[{'type':'text','text':json.dumps({'memories':[{'id':'m1'}]})}]}
             with patch.dict(os.environ,{'EVOLVING_PROFILE_ROUTE_RECEIPT_ROOT':str(receipt_root)}):
-                payload=self._invoke_reply(home,'recall',{'check_id':check_id},result)
+                payload=self._invoke_reply(home,'recall',{'check_id':check_id},result,verbose=True)
             value=json.loads(payload['content'][0]['text'])
             self.assertIn('observability_binding',value)
             self.assertEqual(value['observability_binding']['state'],'stale_prompt_binding')
@@ -256,7 +259,7 @@ class McpToolActivityTests(unittest.TestCase):
             result={'content':[{'type':'text','text':json.dumps({'memories':[]})}]}
             payload=self._invoke_reply(home,'recall',{
                 'check_id':'prompt-a','query':'核对45万元28+14+3与55万元46+5+4两个方案',
-            },result)
+            },result,verbose=True)
             value=json.loads(payload['content'][0]['text'])
             self.assertEqual(value['query_scope_audit']['status'],'no_added_anchors')
 
@@ -264,7 +267,7 @@ class McpToolActivityTests(unittest.TestCase):
         for tool_name in ('recall','research'):
             with self.subTest(tool=tool_name), tempfile.TemporaryDirectory() as home:
                 result={'content':[{'type':'text','text':json.dumps({'memories':[{'id':'m1'}]})}]}
-                payload=self._invoke_reply(home,tool_name,{'query':'查找项目历史'},result)
+                payload=self._invoke_reply(home,tool_name,{'query':'查找项目历史'},result,verbose=True)
                 value=json.loads(payload['content'][0]['text'])
                 contract=value['evidence_contract']
                 self.assertEqual(contract['candidate_role'],'unverified_memory_preview')

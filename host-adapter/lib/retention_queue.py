@@ -31,6 +31,33 @@ def _as_utc(value) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+_QUOTE_PATTERN = r'“[^”]*”|「[^」]*」|『[^』]*』|"[^"\n]*"|`[^`]*`|(?m:^\s*>.*$)'
+
+
+def non_testimony_ranges(role, text: str) -> list[list[int]]:
+    """Spans of a message that are quoted or supplied, not the speaker's own claim.
+
+    Explicit quotations count for every role. For a user-role message, material
+    the user supplied alongside their words (pasted documents, tables, output,
+    another agent's report) counts as well, so it is stored and retrievable but
+    never becomes independent user testimony.
+    """
+    ranges = [[m.start(), m.end()] for m in re.finditer(_QUOTE_PATTERN, text)]
+    if role == 'user':
+        try:
+            from .supplied_material import supplied_material_ranges
+            ranges += supplied_material_ranges(text)
+        except Exception:
+            pass  # provenance refinement must never block capture
+    merged: list[list[int]] = []
+    for start, end in sorted(r for r in ranges if r[1] > r[0]):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return merged
+
+
 def estimate_tokens(text: str) -> int:
     """Conservative local estimate for mixed Chinese/English transcripts."""
     value = str(text or "")
@@ -190,11 +217,22 @@ class RetentionQueue:
                         offsets.append(offsets[-1]+(len(json.dumps(char,ensure_ascii=False)[1:-1]) if structured_source else 1))
                     message_spans.append((message,text,start,offsets))
                 search_start = 0
+                origin_agent = str((metadata or {}).get("origin_agent") or "unknown")
                 for part_index, part in enumerate(parts, start=1):
                     item_id = hashlib.sha256(
                         f"{session_key}\0{message_count}\0{part_index}\0{part}".encode("utf-8")
                     ).hexdigest()
-                    if any(item.get("id") == item_id for item in state["items"]):
+                    content_sha256 = hashlib.sha256(" ".join(part.split()).encode("utf-8")).hexdigest()
+                    if any(
+                        item.get("id") == item_id
+                        or (
+                            not item.get("operation_id")
+                            and item.get("project_id") == project_id
+                            and str((item.get("metadata") or {}).get("origin_agent") or "unknown") == origin_agent
+                            and item.get("content_sha256") == content_sha256
+                        )
+                        for item in state["items"]
+                    ):
                         continue
                     item_metadata = {str(k): str(v) for k, v in (metadata or {}).items()}
                     if len(parts) > 1:
@@ -218,7 +256,7 @@ class RetentionQueue:
                                                                      'original_message_end':char_end,
                                                                      'original_message_length':len(text),
                                                                      'original_message_content_sha256':hashlib.sha256(text.encode()).hexdigest(),
-                                                                     'original_message_quoted_ranges':[[m.start(),m.end()] for m in re.finditer(r'“[^”]*”|「[^」]*」|『[^』]*』|"[^"\n]*"|`[^`]*`|(?m:^\s*>.*$)',text)]}})
+                                                                     'original_message_quoted_ranges':non_testimony_ranges(message.get('role'),text)}})
                     if original_messages and not source_messages:
                         item_metadata['retention_plane']='raw_audit'
                     state["items"].append(
@@ -241,6 +279,7 @@ class RetentionQueue:
                             **({'retention_origin_hold':'source_fragment_without_message_text'}
                                if original_messages and not source_messages and (not write_policy or write_policy.get('knowledge_allowed') is not False) else {}),
                             **({'source_text_available':bool(source_messages)} if original_messages else {}),
+                            "content_sha256": content_sha256,
                             "captured_at": captured.isoformat().replace("+00:00", "Z"),
                         }
                     )
@@ -253,10 +292,11 @@ class RetentionQueue:
         for item in state["items"]:
             if item.get("operation_id") or item.get('retention_origin_hold') or item.get('retention_quarantine'):
                 continue
-            groups.setdefault(item["project_id"], []).append(item)
+            origin_agent = str((item.get("metadata") or {}).get("origin_agent") or "unknown")
+            groups.setdefault((item["project_id"], origin_agent), []).append(item)
 
         batches = []
-        for project_id, items in sorted(groups.items()):
+        for (project_id, _origin_agent), items in sorted(groups.items()):
             def item_order(row):
                 part = str((row.get("metadata") or {}).get("queue_part", "1/1"))
                 try:
@@ -479,6 +519,61 @@ class RetentionQueue:
                 r.get('bank_id') == bank_id and r.get('id') in expected_fingerprints
                 and isinstance(r.get('retention_quarantine'), dict)
                 and r['retention_quarantine'].get('operation_id') == operation_id)]
+            self._write(state)
+            return len(rows)
+
+    def reconcile_quarantined_recovery(
+        self, bank_id, quarantine_operation_id, recovery_receipt, expected_fingerprints
+    ):
+        """Remove a quarantine only after a fresh source-recovery write completes.
+
+        A recovered batch necessarily receives a new idempotency key, so the
+        original completion helper cannot be reused: it would accept only the
+        failed operation's ID.  This variant keeps the same CAS/fingerprint
+        guard while explicitly recording that the terminal receipt belongs to
+        a replacement operation.
+        """
+        if (
+            not bank_id
+            or not quarantine_operation_id
+            or not isinstance(recovery_receipt, dict)
+            or recovery_receipt.get("status") != "completed"
+            or not recovery_receipt.get("operation_id")
+            or not isinstance(expected_fingerprints, dict)
+            or not expected_fingerprints
+        ):
+            raise ValueError("quarantine_recovery_receipt_required")
+        with self._locked():
+            state = self._read()
+            rows = [
+                r
+                for r in state["items"]
+                if r.get("bank_id") == bank_id
+                and isinstance(r.get("retention_quarantine"), dict)
+                and r["retention_quarantine"].get("operation_id") == quarantine_operation_id
+            ]
+            if not rows and not any(r.get("id") in expected_fingerprints for r in state["items"]):
+                return 0
+            if (
+                {r["id"] for r in rows} != set(expected_fingerprints)
+                or len(rows) != len(expected_fingerprints)
+                or any(
+                    hashlib.sha256(json.dumps(r, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+                    != expected_fingerprints[r["id"]]
+                    for r in rows
+                )
+            ):
+                raise ValueError("quarantine_source_or_scope_changed")
+            state["items"] = [
+                r
+                for r in state["items"]
+                if not (
+                    r.get("bank_id") == bank_id
+                    and r.get("id") in expected_fingerprints
+                    and isinstance(r.get("retention_quarantine"), dict)
+                    and r["retention_quarantine"].get("operation_id") == quarantine_operation_id
+                )
+            ]
             self._write(state)
             return len(rows)
 

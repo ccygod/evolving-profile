@@ -49,6 +49,9 @@ def _terms(value: str) -> set[str]:
     return result
 
 
+MIN_HINT_ENTITY_SUPPORT = 3
+
+
 class TopicCatalog:
     def __init__(self, path: Path):
         self.path=Path(path)
@@ -176,6 +179,22 @@ class TopicCatalog:
             for row in [*exact,*domains,*rest,*partial]:
                 if row['topic_id'] not in seen:output.append(row);seen.add(row['topic_id'])
         return output[:limit]
+
+    def hint_search(self,query,limit=5):
+        """Topics offered automatically with every prompt; stricter than ``search``.
+
+        ``search`` is for a caller who asked for something by name, so the long
+        tail must stay findable. An unprompted hint is different: 59% of the entity
+        index is a single source, and most of those are phrases the assistant coined
+        in its own explanations ("调用流水", "目录提示"). A thinly supported entity is
+        hinted only when the prompt names it exactly.
+        """
+        exact=str(query or '').strip().casefold()
+        rows=[row for row in self.search(query,max(limit*3,limit)) if not (
+            str(row.get('topic_id') or '').startswith('entity:')
+            and int(row.get('source_count') or 0)<MIN_HINT_ENTITY_SUPPORT
+            and str(row.get('title') or '').casefold()!=exact)]
+        return rows[:limit]
 
     def project_markdown(self,root:Path):
         root=Path(root);root.parent.mkdir(parents=True,exist_ok=True)

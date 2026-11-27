@@ -277,7 +277,7 @@ def legacy_get_task_guidance(repo: GuidanceRepository, request: dict, char_budge
         unit_text = " ".join([unit.get("text", ""), *unit.get("applies_when", []), *unit.get("scope", {}).get("domains", [])])
         shared_domains = _domains(task_text) & _domains(unit_text)
         domain_match = any(_domain_anchors(task_text, domain) & _domain_anchors(unit_text, domain) for domain in shared_domains)
-        cross_cutting = bool((unit.get("scope") or {}).get("cross_cutting"))
+        cross_cutting = bool(unit.get("scope").get("cross_cutting")) if isinstance(unit.get("scope"), dict) else False
         direct_match = _direct_condition_match(request, unit)
         # A phase/category prior may rank candidates, but it cannot create a
         # match by itself. Require direct conditions, a topic match, or actual

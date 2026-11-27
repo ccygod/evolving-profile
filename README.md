@@ -221,13 +221,14 @@ guarantee that every old memory is correct or every future task will improve.
 
 ## Maturity at a glance
 
-**6.2.0 is the current release; platform-specific validation boundaries remain explicit.**
+**6.2.1 is the current release; platform-specific validation boundaries remain explicit.**
 
-6.2.0 adds **storage governance**: memory that retrieval never uses stops taking vector-index space, raw logs stop growing without bound, and every saving is reversible (see [Storage that stays small](#ep-storage)).
-- **Hot/warm tiering** of low-value and duplicate memories (`v6/memory_tiering.py`), **half-precision embeddings** (`halfvec`, migration `e2f3a4b5c6d7`), a temporal-link cap matched to what retrieval reads, and **compressed, verified archiving** of old tool-call events (`v6/events_retention.py`).
+6.2 adds **storage governance**: memory that retrieval never uses stops taking vector-index space, raw logs stop growing without bound, and every saving is reversible (see [Storage that stays small](#ep-storage)).
+- **Hot/warm tiering** of low-value and duplicate memories (`v6/memory_tiering.py`), **half-precision embeddings** (`halfvec`, migration `f3a4b5c6d7e8`), a temporal-link cap matched to what retrieval reads, and **compressed, verified archiving** of old tool-call events (`v6/events_retention.py`).
 - **MCP adapter live reload** before each request, typed failure audit with JSON-RPC `-32602` for bad arguments, and a schema-drift audit that never records argument values.
 - **One preference retrieval mode** for the Hook and MCP paths, and SQLite-enforced preference `scope` / immutable active revisions.
 - A unified constellation style across user and agent memory, with **Load more** on every graph view.
+- 6.2.1: this repository is synced module by module with the running installation it is cut from — the data-driven **Prompt journey** link map, worker leases, Bank selection, exhaustive-search panel and about 140 previously unreleased files — and `scripts/release-parity.py` now blocks a release that leaves anything behind.
 
 It builds on 6.1, the unified v6 architecture with cross-platform adaptive runtime & ontology governance:
 - **Unified Control Plane & Zero-Shell Scheduling**: local OpenAI-compatible **Model Router** (`v6/model_router.py`, `:12095`, strict failover default + circuit breaker + telemetry) and resident pure-Python **Scheduler Daemon** (`v6/daemon.py`, `:12096`) managing 13 background jobs with zero `.zsh`/shell dependency across macOS, Windows, and Linux.
@@ -238,9 +239,9 @@ It builds on 6.1, the unified v6 architecture with cross-platform adaptive runti
 EP is developed on top of [Hindsight](https://github.com/vectorize-io/hindsight); see [NOTICE.md](NOTICE.md). Full notes: [CHANGELOG-6.2.md](CHANGELOG-6.2.md) · [CHANGELOG-6.1.md](CHANGELOG-6.1.md) · [CHANGELOG-6.0.md](CHANGELOG-6.0.md) · Architecture: [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md) · Earlier 5.1 notes: [CHANGELOG-5.1.md](CHANGELOG-5.1.md).
 
 Product version comes from [VERSION](VERSION); channel/build metadata comes from
-the checked [release manifest](config/release-manifest.json). The current 6.2.0
+the checked [release manifest](config/release-manifest.json). The current 6.2.1
 documentation and code are on `main` and the [`release/6.2.0` branch](https://github.com/gtkj/evolving-profile/tree/release/6.2.0)
-(tag [`v6.2.0`](https://github.com/gtkj/evolving-profile/releases/tag/v6.2.0), mirrored on [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)).
+(tag [`v6.2.1`](https://github.com/gtkj/evolving-profile/releases/tag/v6.2.1), mirrored on [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)).
 
 | Area | Current evidence | Still needs validation |
 | --- | --- | --- |
@@ -405,7 +406,7 @@ back.**
 | Mechanism | What it does | How to undo |
 | --- | --- | --- |
 | Hot/warm tiering (`v6/memory_tiering.py`, every 10 min) | Low-value units and duplicates leave the vector index; text, provenance, keyword/exhaustive search and `read_source` stay. Duplicates must also match numbers and dates, so "1,180 rows" never merges into "1,280 rows". | `python -m v6.memory_tiering restore <unit_id>` or `--reason duplicate` |
-| Half-precision embeddings (migration `e2f3a4b5c6d7`) | `halfvec` storage and HNSW indexes, about half the size, same ranking | `alembic downgrade`, or `EVOLVING_PROFILE_EMBEDDING_STORAGE=vector` before migrating |
+| Half-precision embeddings (migration `f3a4b5c6d7e8`) | `halfvec` storage and HNSW indexes, about half the size, same ranking | `alembic downgrade`, or `EVOLVING_PROFILE_EMBEDDING_STORAGE=vector` before migrating |
 | Temporal-link cap 10 | Writes only the links graph retrieval actually reads | — |
 | Event-log retention (`v6/events_retention.py`, daily) | Tool-call rows of sessions idle > 30 days are compressed into one database row, verified, then deleted; messages are kept | `python -m v6.events_retention restore <archive_id>` |
 | Workspace and trace hygiene | Expired research manifests are swept on every path; recall traces keep ids and scores | — |
@@ -426,7 +427,7 @@ and `... diff before.json after.json` measure your own bank on frozen questions.
 **Installing this candidate?** Start with [candidate setup](docs/CANDIDATE-SETUP.md).
 **Agent reading this repository:** installation alone is not usage; read
 [the Agent operating guide](docs/AGENT-USAGE.md) before choosing memory tools.
-This checkout is the **6.2.0** release line. The product version is read from
+This checkout is the **6.2.1** release line. The product version is read from
 [VERSION](VERSION), and the current documentation branch is `release/6.2.0`
 (mirrored on `main`); older `v5.1.x` tags are historical archives only.
 
@@ -434,7 +435,7 @@ This checkout is the **6.2.0** release line. The product version is read from
 
 For a complete local run, treat these as separate gates:
 
-1. **Build:** run the installer and confirm it reports `EP 6.2.0` from `VERSION`.
+1. **Build:** run the installer and confirm it reports `EP 6.2.1` from `VERSION`.
 2. **API:** start port `8888` and require `curl --fail http://127.0.0.1:8888/health`.
 3. **Controller:** start port `12079` and require `curl --fail http://127.0.0.1:12079/v1/status`.
 4. **Console:** start port `9999`, open the selected language route, create or select your own Bank, and click through the health/configuration pages.

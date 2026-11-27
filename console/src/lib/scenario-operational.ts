@@ -30,10 +30,12 @@ export function scenarioOperationalEvidence(snapshot: ScenarioSnapshot | null): 
       case "raw_available_summary_source_not_applicable": value.notApplicable++; break;
       case "raw_available_summary_protected": value.protected++; break;
       case "raw_available_summary_waiting_source":
+        // Older rows keep this status after an automatic AI report is written.
         if (aiReportReady) value.aiReports++;
         else value.waitingSource++;
         break;
       case "raw_available_summary_pending": case "deterministic_projection_unreviewed": value.pending++; break;
+      case "raw_available_summary_ai_report": value.reviewed++; break;
       default: value.unknown++;
     }
   }

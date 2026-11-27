@@ -109,9 +109,64 @@ class SemanticRecallService:
         mapping={_unit_text(unit):vector for unit,vector in zip(units,documents)}
         return semantic_candidates(units,query,embed=lambda text:query_vector if text==query else mapping[text],task=task)
 
+    def centered_scores(self, units: list[dict], task: dict) -> dict[str, float]:
+        """Corpus-centered cosine for every reviewed, in-scope unit (id -> score)."""
+        query=str(task.get('current_user_message') or task.get('objective') or '')
+        eligible=[unit for unit in units
+                  if (unit.get('preference_audit') or {}).get('state','not_reviewed') in {'approved','restricted'}
+                  and not _scoped_out(unit,task)]
+        # Too few documents to centre: report no scores rather than raw cosine,
+        # which would call every unit on-topic.
+        if not query or len(eligible) < CENTERING_MIN_DOCUMENTS:
+            return {}
+        query_vector=self.client.embed_many([query],'query')[0]
+        scores=centered_cosines(query_vector,self.cache.document_vectors(eligible))
+        return {unit['id']:score for unit,score in zip(eligible,scores)}
+
+
+# Below this many documents the corpus mean is too noisy to stand for the
+# encoder's shared direction, so centering would distort rather than sharpen.
+CENTERING_MIN_DOCUMENTS = 20
+# Corpus-centered cosine at which a unit counts as semantically on-topic, and
+# the lower level at which semantics at least does not contradict a weak
+# lexical match. Both are overridable in guidance-settings.json.
+CENTERED_SEMANTIC_FLOOR = 0.25
+CENTERED_CORROBORATION_FLOOR = 0.17
+
+
+def centered_cosines(query_vector: list[float], document_vectors: list[list[float]]) -> list[float]:
+    """Cosine after removing the direction every document shares.
+
+    Sentence encoders are anisotropic: on this registry raw cosine between any
+    prompt and any preference lands in 0.80-0.92, so a raw threshold cannot tell
+    on-topic from off-topic. Subtracting the corpus mean vector from both sides
+    removes that common component and leaves the part that actually differs.
+    With too few documents the raw cosine is returned unchanged.
+    """
+    if len(document_vectors) < CENTERING_MIN_DOCUMENTS:
+        return [_cosine(query_vector, vector) for vector in document_vectors]
+    mean=_mean_vector(document_vectors)
+    query=[value-base for value,base in zip(query_vector,mean)]
+    return [_cosine(query,[value-base for value,base in zip(vector,mean)]) for vector in document_vectors]
+
+
+def _mean_vector(vectors: list[list[float]]) -> list[float]:
+    size=len(vectors[0]); count=len(vectors)
+    return [sum(vector[i] for vector in vectors)/count for i in range(size)]
+
+
+def centered_vectors(document_vectors: list[list[float]]) -> list[list[float]]:
+    """Documents with the shared corpus direction removed, for comparing units to each other."""
+    if len(document_vectors) < CENTERING_MIN_DOCUMENTS:
+        return [list(vector) for vector in document_vectors]
+    mean=_mean_vector(document_vectors)
+    return [[value-base for value,base in zip(vector,mean)] for vector in document_vectors]
+
 
 def _scoped_out(unit: dict, task: dict) -> bool:
     scope = unit.get("scope") or {}
+    if not isinstance(scope, dict):
+        return False
     for key in ("project_ids", "task_ids", "agent_roles"):
         required = set(scope.get(key) or [])
         if required and not required.intersection(task.get(key) or []):

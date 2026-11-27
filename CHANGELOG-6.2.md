@@ -1,6 +1,65 @@
-# Evolving Profile 6.2.0
+# Evolving Profile 6.2.1
 
-Release date: 2026-11-24
+## 6.2.1 — 2026-11-26
+
+6.2.1 brings this repository in line with the running installation it is cut from. Earlier
+releases synced selected files only, so components finished after a release cut never shipped —
+most visibly the console link map, which fresh installs still showed as the old fixed picture
+with editable label boxes. A module-by-module comparison found about 110 files whose code
+differed and about 140 files that existed only in the running installation; all of them are now
+reviewed and synced, keeping this repository's sanitised wording and its own later fixes.
+
+### What fresh installs now get
+
+- **Data-driven link map ("Prompt journey").** Each prompt's path through the serial spine and the
+  parallel user-memory, agent-memory and external-RAG lanes, drawn from its receipts, with
+  per-node counts and dimmed nodes for steps without a receipt. Read-only APIs `prompt-trace`,
+  `tool-stats` and `host-catalog`; the prompt list covers Claude, Trae, WorkBuddy and Doubao Work.
+- **Console:** Bank selection and access notice, exhaustive-search panel, consolidation progress,
+  Claude-native prompt verification.
+- **API / Worker:** worker leases with fencing (`claim_version`, `lease_expires_at`, heartbeats) so
+  two workers cannot both process one operation; runtime identity for API, worker and telemetry;
+  an extraction run where every chunk fails is an error, not an empty success.
+- **Host adapter:** host-fit and host projection, personal-record search, supplied-material
+  handling, scenario form sources and automatic draft/attribution repair, memory envelope, and
+  Claude mirror context — 37 modules plus their tests.
+- **Guidance:** unit consolidation and corpus-centred semantic thresholds.
+
+### Fixes found during the sync
+
+- **Migration id collision.** 6.2.0 published the halfvec migration as `e2f3a4b5c6d7`, an id the
+  worker-lease migration already used. The worker-lease migration keeps `e2f3a4b5c6d7`; halfvec is
+  now `f3a4b5c6d7e8` and also adds the lease columns, so a database stamped by 6.2.0 (which ran
+  halfvec under the old id) still receives them. Both paths were run on a scratch database.
+- **Retention worker lost acknowledgement.** An early "processing" return skipped recovery of a
+  submitted batch whose acknowledgement was lost; recovery now runs first.
+- **Host traces and isolated installs.** Archived Codex sessions and WorkBuddy traces outside the
+  state root are read only for the default install, so tests and second installs no longer count
+  this machine's real sessions (`EVOLVING_PROFILE_HOST_ARCHIVED_SESSIONS_ROOT`,
+  `EVOLVING_PROFILE_WORKBUDDY_TRACES_ROOT` override).
+- `host-adapter/lib/content.py` imports on Python 3.9 again (`from __future__ import annotations`).
+- Scenario overview counts automatic AI reports both under the new status and on older
+  "waiting for source" rows.
+
+### Verification (2026-11-26)
+
+| Scope | Result |
+| --- | --- |
+| Host adapter | 2124 passed, 17 skipped (governed-HTTP tests excluded: fastmcp 3 in the test env) |
+| Guidance / controller / status / v6 | 162 / 184 / 56 / 24 passed |
+| Console | 700 passed; TypeScript and production build pass |
+| API (full suite, scratch Postgres) | 5606 passed vs 5568 before the sync; every remaining failure also fails before the sync, fails on the running installation's code, or is timing-dependent under parallel load and passes alone |
+| Migrations | fresh install and 6.2.0 upgrade both run on a scratch database |
+| Release checks | `release-parity.py`, `release-preflight.py`, `verify-package.sh` (secret and personal-data scan) pass |
+| Browser | link map, agent memory and overview pages render against a running install |
+
+### Release process
+
+- `scripts/release-parity.py` compares every module with the source an installation runs and fails
+  on any unexplained difference. Paths, personal-data patterns and accepted differences stay in a
+  local config that is never committed. See `docs/RELEASING.md`.
+
+## 6.2.0 — 2026-11-24
 
 6.2 is a storage-governance and reliability release. Memory that is never
 retrieved no longer occupies vector-index space, raw logs stop growing without
@@ -22,7 +81,7 @@ competed for top-k slots.
   times within one day — the guard exists because "1,180 rows migrated" and "1,280 rows
   migrated" are different facts with near-identical vectors. The representative keeps the
   evidence: `proof_count` is credited and the merged ids are listed in `merged_duplicates`.
-- **Half-precision embeddings (migration `e2f3a4b5c6d7`).** `memory_units.embedding` is stored as
+- **Half-precision embeddings (migration `f3a4b5c6d7e8`; published as `e2f3a4b5c6d7` in 6.2.0).** `memory_units.embedding` is stored as
   `halfvec`; per-bank HNSW indexes use `halfvec_cosine_ops`. The table and its vector indexes
   shrink by about half with unchanged ranking. The migration is idempotent, skips pgvector < 0.7,
   and can be declined with `EVOLVING_PROFILE_EMBEDDING_STORAGE=vector` (read by the migration
@@ -108,7 +167,7 @@ your own data before and after upgrading.
 
 ## Upgrade
 
-1. Run the API migrations (`e2f3a4b5c6d7` converts embeddings to `halfvec`; on ~75k units it took
+1. Run the API migrations (`f3a4b5c6d7e8` converts embeddings to `halfvec`; on ~75k units it took
    about 13 s, during which the table is locked). Set `EVOLVING_PROFILE_EMBEDDING_STORAGE=vector`
    *before* migrating to keep 32-bit vectors.
 2. Restart the scheduler daemon; `memory-tiering` is scheduled only when a bank is configured
@@ -119,7 +178,7 @@ your own data before and after upgrading.
    Without that guard a ledger rebuild of an archived session would delete its ledger rows.
 4. Already-running MCP adapters from 6.1 do not have live reload yet; reconnect them once.
 
-Rollback: `alembic downgrade d1e2f3a4b5c6` restores `vector`; `python -m v6.memory_tiering restore
+Rollback: `alembic downgrade e2f3a4b5c6d7` restores `vector`; `python -m v6.memory_tiering restore
 --reason low_value` / `--reason duplicate` returns warm units; `python -m v6.events_retention
 restore <archive_id>` re-inserts archived events.
 

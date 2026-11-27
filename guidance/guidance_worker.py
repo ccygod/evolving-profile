@@ -11,6 +11,7 @@ import sys
 
 from mcp_runtime import load_repository
 from observation_rebuild import atomic, fetch_inputs, observation_fingerprint
+from consolidate_units import consolidate_if_changed
 
 
 STATE_ROOT = Path(os.environ.get("EVOLVING_PROFILE_STATE_ROOT", str(Path.home() / ".evolving-profile")))
@@ -82,7 +83,8 @@ def main():
             last_completed = last_completed_summary(previous)
             env = dict(os.environ, PYTHONPATH=str(SOURCE_ROOT), EVOLVING_PROFILE_STATE_ROOT=str(STATE_ROOT))
             semantic_cache = prewarm_semantic_cache(env)
-            atomic(STATE, {"status": "idle_up_to_date", "at": now.isoformat(), "seen_observation_fingerprints": current,
+            consolidation = consolidate_if_changed()  # units approved since the last run
+            atomic(STATE, {"status": "idle_up_to_date", "at": now.isoformat(), "consolidation": consolidation, "seen_observation_fingerprints": current,
                            "seen_observation_ids": sorted(current), "pending": 0, "llm_calls": 0,
                            "source_total": len(current), "last_successful_run": previous.get("last_successful_run"),
                            "last_completed": last_completed, "semantic_cache": semantic_cache}); return
@@ -100,7 +102,9 @@ def main():
             _run("rebuild_models.py", str(CONFIG), str(model_dir), env=env)
         repo = load_repository(CONFIG)
         semantic_cache = prewarm_semantic_cache(env)
-        completed = {"run_dir": str(run_dir), "processed": len(changed),
+        consolidation = consolidate_if_changed()
+        repo = load_repository(CONFIG)
+        completed = {"run_dir": str(run_dir), "processed": len(changed), "consolidation": consolidation,
                      "publication": {key: publication.get(key) for key in ("candidate_count", "active_published", "held_count", "failed")},
                      "active_guidance": len(repo.active_units()), "active_models": len(repo.active_models()),
                      "completed_at": dt.datetime.now(dt.timezone.utc).isoformat()}

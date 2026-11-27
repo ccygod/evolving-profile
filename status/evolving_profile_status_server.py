@@ -129,7 +129,7 @@ def _catalog_probe(prompt):
            'hints':[{'topic_id':row.get('id'),'title':row.get('name'),'abstract':row.get('description'),'refreshed_at':row.get('timestamp'),
                      'source_count':None,'coverage':{'kind':'knowledge_page_navigation'},'pending_changes':1 if row.get('is_stale') else 0,
                      'review':knowledge_review(str(row.get('id') or '')),'boundary':'navigation_only_not_fact_evidence'} for row in pages]}
-  topics=TopicCatalog(TOPIC_CATALOG_PATH).search(prompt,5)
+  topics=TopicCatalog(TOPIC_CATALOG_PATH).hint_search(prompt,5)
   if topics:
    entities=list(dict.fromkeys(entity for row in topics for entity in row.get('entities') or []))[:12]
    fields=('topic_id','title','abstract','overview','entities','time_range','source_count','source_count_semantics','coverage','pending_changes','conflicts','pending_changes_status','conflict_status','content_status','overview_status','refreshed_at','boundary')

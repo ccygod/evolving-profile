@@ -7936,6 +7936,7 @@ class MemoryQueryController:
                         "continuation_status": "background_running",
                         "foreground_partial": True,
                     })
+                self._apply_v6_trust_and_state(result, body)
                 self._foreground_reuse_put(foreground_key, result)
                 slot["result"] = result
                 return result
@@ -7960,6 +7961,108 @@ class MemoryQueryController:
         receipt.update({"coalesced": True, "cache_hit": False, "continuation_cache_key": key})
         result["trace"] = {"query_controller": dict(receipt)}
         return result
+
+    def _apply_v6_trust_and_state(self, result: dict[str, Any], body: dict[str, Any]) -> None:
+        """EP v6.1 post-pass: soft-demote unconfirmed assistant statements / fragments and attach active entity_state hints."""
+        try:
+            items = result.get("results")
+            if isinstance(items, list) and len(items) > 1:
+                def _demoted_key(row: Any) -> int:
+                    if not isinstance(row, dict):
+                        return 0
+                    meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+                    text = str(row.get("text") or "").lstrip()
+                    if (
+                        meta.get("recall_demoted") is True
+                        or meta.get("trust_level") == "assistant_unconfirmed"
+                        or meta.get("fragment_noise") is True
+                        or text.startswith(("Assistant statement (not user-confirmed)", "【助手·未确认"))
+                    ):
+                        return 1
+                    return 0
+                items.sort(key=_demoted_key)
+                result.setdefault("query_controller", {})["v6_trust_rerank"] = True
+            query_text = str(body.get("query") or "").strip()
+            if query_text and len(query_text) >= 2:
+                try:
+                    import psycopg2
+                    pg_port = int(os.environ.get("PGPORT", "15432"))
+                    pg_db = os.environ.get("PGDATABASE", "evolving_profile")
+                    pg_user = os.environ.get("PGUSER", "evolving_profile_admin")
+                    with psycopg2.connect(port=pg_port, dbname=pg_db, user=pg_user, connect_timeout=1, options="-c statement_timeout=120") as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                SELECT entity_type, entity_key, status, left(COALESCE(summary, ''), 180), updated_at::text
+                                FROM ep_events.entity_state
+                                WHERE valid_to IS NULL
+                                  AND length(entity_key) >= 3
+                                  AND (%s ILIKE '%%' || entity_key || '%%' OR entity_key ILIKE '%%' || %s || '%%')
+                                ORDER BY updated_at DESC
+                                LIMIT 3
+                                """,
+                                (query_text, query_text[:60]),
+                            )
+                            rows = cur.fetchall()
+                            if rows:
+                                result["entity_state_hints"] = [
+                                    {"entity_type": r[0], "entity_key": r[1], "status": r[2], "summary": r[3], "updated_at": r[4]}
+                                    for r in rows
+                                ]
+
+                            # EP v6.3 Hybrid Lane 2: Deliverable/Artifact direct match on rare search terms
+                            ep_v6_code = os.environ.get("EP_CODE_ROOT", str(Path(__file__).resolve().parents[1]))
+                            if ep_v6_code not in sys.path and os.path.isdir(ep_v6_code):
+                                sys.path.insert(0, ep_v6_code)
+                            try:
+                                from v6.artifact_index import extract_rare_search_terms
+                                rare_terms = extract_rare_search_terms(query_text)
+                            except Exception:
+                                rare_terms = []
+
+                            if rare_terms:
+                                patterns = [f"%{t}%" for t in rare_terms[:6]]
+                                cur.execute("SELECT to_regclass('ep_events.artifacts') IS NOT NULL")
+                                art_rows = []
+                                if cur.fetchone()[0]:
+                                    cur.execute(
+                                        """
+                                        SELECT id, file_name, file_path, ext, project_key, COALESCE(snippet, ''), mentioned_at::text
+                                        FROM ep_events.artifacts
+                                        WHERE file_name ILIKE ANY(%s) OR file_path ILIKE ANY(%s)
+                                        ORDER BY (file_name ILIKE ANY(%s)) DESC, mentioned_at DESC NULLS LAST
+                                        LIMIT 4
+                                        """,
+                                        (patterns, patterns, patterns),
+                                    )
+                                    art_rows = cur.fetchall()
+                                if art_rows:
+                                    result["artifact_hits"] = [
+                                        {"id": f"artifact:{r[0]}", "file_name": r[1], "file_path": r[2], "ext": r[3], "project_key": r[4], "snippet": r[5], "mentioned_at": r[6]}
+                                        for r in art_rows
+                                    ]
+                                    existing_texts = {str(x.get("text") or "") for x in (result.get("results") or []) if isinstance(x, dict)}
+                                    injected = []
+                                    for r in art_rows[:3]:
+                                        txt = f"[交付产物 · {r[3].upper()}] {r[1]} | 路径: {r[2]}" + (f" | {r[5][:140]}" if r[5] else "")
+                                        if txt not in existing_texts:
+                                            injected.append({
+                                                "id": f"artifact-{r[0]}",
+                                                "text": txt,
+                                                "type": "world",
+                                                "score": 0.99,
+                                                "mentioned_at": r[6],
+                                                "metadata": {"retrieval_lane": "artifact", "file_name": r[1], "file_path": r[2], "ext": r[3]},
+                                            })
+                                    if injected:
+                                        if not isinstance(result.get("results"), list):
+                                            result["results"] = []
+                                        result["results"] = injected + result["results"]
+                                        result.setdefault("query_controller", {})["v6_hybrid_artifact_hits"] = len(injected)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def _execute_recall_uncached(
         self,
@@ -9183,6 +9286,16 @@ class ControllerHandler(BaseHTTPRequestHandler):
                 code, _, body = self.app.upstream("GET", "/health", None, dict(self.headers.items()), 3)
                 upstream = json.loads(body.decode("utf-8")) if body else {}
                 healthy = code == 200 and upstream.get("status") == "healthy"
+                # A brief API restart must not leave the controller's public
+                # health projection permanently degraded.  Only clear the
+                # stale error when the last failure is the transport-level
+                # connection-refused probe that this endpoint itself records;
+                # real planner/execution failures remain visible until their
+                # normal successful path updates the state.
+                snapshot = self.app.status.snapshot()
+                last_error = str(snapshot.get("last_error") or "")
+                if healthy and snapshot.get("functional_status") == "degraded" and "ConnectionRefusedError" in last_error:
+                    self.app.status.update(functional_status="healthy", last_error=None, last_error_at=None)
                 self.send_json(200 if healthy else 503, {
                     "status": "healthy" if healthy else "degraded",
                     "controller": "memory-query-controller",

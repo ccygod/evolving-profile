@@ -7,16 +7,22 @@ import uuid
 from pathlib import Path
 
 
+def _normalize_base_roots(root):
+    if isinstance(root, (list, tuple)):
+        items = [Path(r).expanduser() for r in root if r]
+    else:
+        items = [Path(root).expanduser()]
+    return list(dict.fromkeys(items))
+
+
 def session_roots(root):
-    root=Path(root).expanduser()
-    # The sibling archive belongs to Codex's documented directory layout,
-    # not to arbitrary user-selected folders.
-    roots=[root]
-    if root.name=='sessions':roots.append(root.parent/'archived_sessions')
-    # Claude Desktop chats are converted by EP's desktop bridge into Codex-shaped rollouts under EP's own state dir
-    # (never under ~/.codex). Only the real Codex layout opts in, so any other root is untouched.
-    if root.name=='sessions' and root.parent.name=='.codex':
-        roots.append(root.parent.parent/'.evolving-profile'/'claude-code'/'rollouts')
+    roots = []
+    for item in _normalize_base_roots(root):
+        roots.append(item)
+        # The sibling archive belongs to Codex's documented directory layout,
+        # not to arbitrary user-selected folders.
+        if item.name == 'sessions':
+            roots.append(item.parent / 'archived_sessions')
     return list(dict.fromkeys(roots))
 
 
@@ -41,6 +47,8 @@ def session_paths(root,session_id,*,max_compare_bytes=16*1024*1024):
                             'reason':'compressed_source_readback_not_supported'}}
     if not paths:return {'status':'source_missing','paths':[]}
     if len(paths)>8:return {'status':'too_many_source_files','paths':paths}
+    archive_roots=[r.parent/'archived_sessions' for r in _normalize_base_roots(root) if r.name=='sessions']
+    def _in_archive(p): return any(p.is_relative_to(a) for a in archive_roots)
     for path in paths:
         try:
             with path.open('rb') as stream:
@@ -52,14 +60,14 @@ def session_paths(root,session_id,*,max_compare_bytes=16*1024*1024):
             # Active legacy files may begin with a partial append; the
             # incremental reader retains its old checkpoint/empty behavior.
             # An archive must carry a complete native identity header.
-            if path.is_relative_to(Path(root).expanduser().parent/'archived_sessions'):
+            if _in_archive(path):
                 return {'status':'source_incomplete','paths':paths}
             continue
         if isinstance(header,dict) and header.get('type')=='session_meta':
             payload=header.get('payload')
             if not isinstance(payload,dict) or payload.get('id')!=sid:
                 return {'status':'source_identity_mismatch','paths':paths}
-        elif path.is_relative_to(Path(root).expanduser().parent/'archived_sessions'):
+        elif _in_archive(path):
             return {'status':'source_identity_mismatch','paths':paths}
     if len(paths)>1:
         digests=[]

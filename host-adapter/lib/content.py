@@ -20,6 +20,8 @@ Codex rollout format (JSONL):
     - mcp_tool_call_end — MCP tool call results
 """
 
+from __future__ import annotations
+
 import json
 import hashlib
 import os
@@ -67,6 +69,31 @@ def strip_ambient_context(content: str) -> str:
             value,
             flags=re.IGNORECASE,
         )
+    return value
+
+
+_CLAUDE_LEADING_REMINDER = re.compile(r"^\s*<system-reminder>[\s\S]*?</system-reminder>")
+_CLAUDE_HOST_EVENT = re.compile(
+    r"^\s*(?:\[SYSTEM NOTIFICATION[^\]]*\][\s\S]*?)?"
+    r"<task-notification>(?=[\s\S]*?<task-id>)(?=[\s\S]*?<status>)[\s\S]*?</task-notification>\s*$"
+)
+
+
+def strip_claude_host_envelopes(content: str) -> str:
+    """Drop Claude-host text that arrives in the user turn but the user never wrote.
+
+    Claude prepends complete ``<system-reminder>`` blocks to a prompt and reports
+    a finished background task as a user-role ``<task-notification>``. Neither is
+    a request: left in place the first becomes the recall query and task
+    objective, and the second replaces the user's real objective. Only leading,
+    complete reminder blocks and a message that is nothing but a notification
+    are removed, so a quoted or partial example stays user content.
+    """
+    value = str(content or "")
+    if _CLAUDE_HOST_EVENT.match(value):
+        return ""
+    while (match := _CLAUDE_LEADING_REMINDER.match(value)):
+        value = value[match.end():]
     return value
 
 
@@ -120,14 +147,15 @@ def normalize_question_reply(content: str) -> str:
         return value
 
 
-def extract_user_request(content: str, *, structural_context_only: bool = False) -> str:
+def extract_user_request(content: str, *, structural_context_only: bool = False,
+                         preserve_question_reply: bool = False) -> str:
     """Return only the user-authored request from a Codex prompt envelope.
 
     Codex can prepend attachment manifests and ambient UI blocks to the actual
     request.  Those fields remain available to the caller through the raw hook
     input, but must not become the semantic recall query or the trace title.
     """
-    value = strip_memory_tags(str(content or ""))
+    value = strip_claude_host_envelopes(strip_memory_tags(str(content or "")))
     value = _strip_leading_task_metadata(value) if structural_context_only else strip_ambient_context(value)
     matches = list(_USER_REQUEST_MARKER.finditer(value))
     if matches:
@@ -144,7 +172,9 @@ def extract_user_request(content: str, *, structural_context_only: bool = False)
         "",
         value,
     )
-    return normalize_question_reply(value.strip())
+    # Scenario provenance checks may retain a form envelope, but must still
+    # apply the ordinary attachment, ambient-context and memory-tag cleanup.
+    return value.strip() if preserve_question_reply else normalize_question_reply(value.strip())
 
 
 def _native_environment_shape(element) -> bool:
@@ -794,11 +824,18 @@ def format_current_time() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _truncate_assistant_text(text: str, max_chars: int | None) -> str:
+    if not max_chars or max_chars <= 0 or len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "…[assistant output truncated; full log in work_ledger]"
+
+
 def prepare_retention_transcript(
     messages: list,
     retain_roles: list = None,
     retain_full_window: bool = False,
     include_tool_calls: bool = False,
+    max_assistant_chars: int | None = None,
 ) -> tuple:
     """Format messages into a retention transcript.
 
@@ -834,11 +871,11 @@ def prepare_retention_transcript(
     allowed_roles = set(retain_roles or ["user", "assistant"])
 
     if include_tool_calls:
-        return _prepare_json_transcript(target_messages, allowed_roles)
-    return _prepare_text_transcript(target_messages, allowed_roles)
+        return _prepare_json_transcript(target_messages, allowed_roles, max_assistant_chars=max_assistant_chars)
+    return _prepare_text_transcript(target_messages, allowed_roles, max_assistant_chars=max_assistant_chars)
 
 
-def _prepare_json_transcript(messages: list, allowed_roles: set) -> tuple:
+def _prepare_json_transcript(messages: list, allowed_roles: set, max_assistant_chars: int | None = None) -> tuple:
     """Format messages as JSON with full tool call data."""
     structured_messages = []
     for msg in messages:
@@ -850,6 +887,19 @@ def _prepare_json_transcript(messages: list, allowed_roles: set) -> tuple:
         blocks = _strip_memory_tags_from_blocks(content, strip_ambient=(role == "user"))
         if not blocks:
             continue
+        if role == "assistant" and max_assistant_chars:
+            bounded = []
+            remaining = max_assistant_chars
+            for blk in blocks:
+                if isinstance(blk, dict) and blk.get("type") == "text":
+                    t = str(blk.get("text") or "")
+                    if remaining <= 0:
+                        continue
+                    bounded.append({**blk, "text": _truncate_assistant_text(t, remaining)})
+                    remaining -= len(t)
+                else:
+                    bounded.append(blk)
+            blocks = bounded
 
         row = {"role": role, "content": blocks}
         if isinstance(msg.get('source_record'), dict):
@@ -866,7 +916,7 @@ def _prepare_json_transcript(messages: list, allowed_roles: set) -> tuple:
     return transcript, len(structured_messages)
 
 
-def _prepare_text_transcript(messages: list, allowed_roles: set) -> tuple:
+def _prepare_text_transcript(messages: list, allowed_roles: set, max_assistant_chars: int | None = None) -> tuple:
     """Format messages as legacy text with [role:]...[role:end] markers."""
     parts = []
 
@@ -881,6 +931,8 @@ def _prepare_text_transcript(messages: list, allowed_roles: set) -> tuple:
         content = strip_memory_tags(content).strip()
         if role == "user":
             content = strip_ambient_context(content).strip()
+        elif role == "assistant" and max_assistant_chars:
+            content = _truncate_assistant_text(content, max_assistant_chars)
 
         if not content:
             continue

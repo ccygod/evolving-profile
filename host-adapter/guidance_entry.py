@@ -17,6 +17,7 @@ from pathlib import Path
 import sys
 import uuid
 from lib.instruction_entry import VERSION, instruction_block, instruction_receipt
+from lib.content import extract_task_user_request
 from task_state import TaskStateStore
 from lib.memory_policy import classify_memory_policy
 from entry_navigation import build_navigation_map
@@ -30,6 +31,70 @@ MAX_CONTEXT_CHARS = 6500
 AGENT_ENTRY_MAX_CONTEXT_CHARS = 12000
 PROMPT_INGRESS = Path.home() / ".evolving-profile" / "audit" / "prompt-ingress.jsonl"
 TASK_STATE_ROOT = Path.home() / ".evolving-profile" / "task-state"
+
+
+# A very short message in a session that already has an active task is almost
+# always a follow-up to it ("加重试", "修配置和残留"), whatever words it happens
+# to use. The bound stays low on purpose: a sentence long enough to name its own
+# object ("检查本机哪些历史项目、缓存和备份待删除") is a task in its own right.
+SHORT_FOLLOWUP_MAX_CHARS = 12
+# Guidance already delivered in this session is not sent again until this many
+# prompts later, or until the host compacts or restarts the conversation.
+REDELIVER_AFTER_PROMPTS = 12
+
+
+class SessionDeliveryLedger:
+    """Which guidance bodies this session's Agent has already been given.
+
+    Re-sending an unchanged record every prompt costs context and teaches the
+    Agent to skim the block. The ledger is a per-session cache of delivery, not
+    memory: it expires with the session, is cleared on compaction, and a changed
+    revision is always delivered again.
+    """
+    def __init__(self, root: Path, session_id: str):
+        self.path = Path(root) / (hashlib.sha256(str(session_id).encode()).hexdigest() + '.delivered.json')
+        try:
+            value = json.loads(self.path.read_text(encoding='utf-8'))
+            self.prompt_count = int(value.get('prompt_count') or 0)
+            self.items = dict(value.get('items') or {})
+        except (OSError, ValueError, TypeError):
+            self.prompt_count, self.items = 0, {}
+        self.prompt_count += 1
+
+    @staticmethod
+    def _key(row: dict) -> str:
+        return str(row.get('id') or row.get('section_id') or '')
+
+    @staticmethod
+    def _revision(row: dict) -> str:
+        return str(row.get('revision') or row.get('model_revision') or row.get('content_sha256') or '')
+
+    def still_delivered(self, row: dict) -> bool:
+        entry = self.items.get(self._key(row))
+        return bool(entry and entry.get('revision') == self._revision(row)
+                    and self.prompt_count - int(entry.get('at_prompt') or 0) < REDELIVER_AFTER_PROMPTS)
+
+    def mark(self, rows) -> None:
+        for row in rows:
+            if self._key(row):
+                self.items[self._key(row)] = {'revision': self._revision(row), 'at_prompt': self.prompt_count}
+
+    def save(self) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.path.with_suffix('.tmp')
+            temporary.write_text(json.dumps({'prompt_count': self.prompt_count, 'items': self.items}, ensure_ascii=False), encoding='utf-8')
+            temporary.replace(self.path)
+        except OSError:
+            pass
+
+
+def reset_session_delivery(session_id: str, root: Path | None = None) -> None:
+    """Forget what was delivered: the host dropped or rewrote the conversation."""
+    try:
+        (Path(root or TASK_STATE_ROOT) / (hashlib.sha256(str(session_id).encode()).hexdigest() + '.delivered.json')).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _continuation_only(text: str) -> bool:
@@ -62,7 +127,9 @@ def _active_context(hook_input: dict, current_prompt: str) -> str:
                 continue
             if str(row.get("session_id") or "") != session_id:
                 continue
-            prior = str(row.get("prompt_preview") or row.get("prompt") or "").strip()
+            # Rows recorded before envelope stripping can hold a host event or
+            # a leading reminder; only what the user wrote is context.
+            prior = extract_task_user_request(str(row.get("prompt_preview") or row.get("prompt") or "")).strip()
             if prior and prior != current_prompt and not _continuation_only(prior) and prior not in recent:
                 recent.append(prior[:1200])
                 if len(recent)>=3:break
@@ -121,7 +188,8 @@ def build_request(hook_input: dict, prompt: str, context_ref: str, *, memory_pol
     referential_followup = bool(active_context and (
         re.match(r'^(?:那|那么|所以|还有|另外|再|还是|刚才|上面|上述|这个|这次)', value)
         or re.search(r'为什么(?:你)?(?:没|不)(?:用|查|读)|你(?:漏了|没查|没用|没读)',value)))
-    continuation = explicit_continuation or recheck_continuation or referential_followup
+    short_followup = bool(active_context and 0 < len(normalized) <= SHORT_FOLLOWUP_MAX_CHARS)
+    continuation = explicit_continuation or recheck_continuation or referential_followup or short_followup
     if not continuation:
         active_context = ""
     phase = _phase(value)
@@ -201,8 +269,12 @@ def _entry_relevant(prompt: str, item: dict) -> bool:
     return True
 
 
-def render_entry(result: dict, prompt: str = "", *, max_chars=None, include_instruction=True) -> tuple[str, dict]:
-    """Pack whole records; the receipt describes exactly the emitted bodies."""
+def render_entry(result: dict, prompt: str = "", *, max_chars=None, include_instruction=True, ledger=None) -> tuple[str, dict]:
+    """Pack whole records; the receipt describes exactly the emitted bodies.
+
+    With a ``ledger``, records the session already holds are named in one line
+    instead of repeated, and an entry with nothing new to say renders as ''.
+    """
     budget = MAX_CONTEXT_CHARS if max_chars is None else max(0, int(max_chars))
     manual = instruction_block('user-prompt-submit') + '\n' if include_instruction else ''
     stable, included, models, bodies = [], [], [], []
@@ -215,10 +287,14 @@ def render_entry(result: dict, prompt: str = "", *, max_chars=None, include_inst
     groups = (('候选偏好', result.get('included') or [], included),
               ('稳定协作骨架', [x for x in result.get('stable_profile') or [] if str(x.get('id')) not in selected_ids], stable),
               ('融合心智模型', result.get('model_sections') or [], models))
+    repeated = []
     for kind, rows, emitted in groups:
         for row in rows:
             identity = str(row.get('id') or row.get('section_id') or '')
             text = str(row.get('text') or row.get('content') or '')
+            if ledger is not None and text and ledger.still_delivered(row):
+                repeated.append(identity)
+                continue
             body = f'- {kind} {identity}：{text}'
             for field, label in (('scope','作用范围'),('applies_when','适用条件'),('exceptions','例外'),('effect_on_action','行动影响')):
                 if row.get(field):
@@ -231,13 +307,20 @@ def render_entry(result: dict, prompt: str = "", *, max_chars=None, include_inst
             bodies.append(body); emitted.append(row); used += len(body) + 1
     coverage = 'partial_entry_body_with_deferred' if deferred else str(result.get('coverage') or 'unknown')
     summary = f'coverage={coverage}；{len(stable)} 条稳定协作骨架；{len(included)} 条候选偏好已写入本轮上下文；{len(models)} 个模型章节；{len(deferred)} 条未读。\n'
+    if repeated:
+        summary += f'另有 {len(repeated)} 条本会话此前已送达且未变化，仍然有效，不再重复。\n'
     value = manual + start + summary + '\n'.join(bodies) + footer
+    if ledger is not None and not bodies and not deferred:
+        # Nothing new for the Agent to read: say nothing rather than a header.
+        value = manual
     if len(value) > budget:
         value = ''
         stable, included, models = [], [], []
         coverage = 'entry_budget_unavailable'
+    if ledger is not None and value:
+        ledger.mark(stable + included + models)
     return value, {'stable_profile':stable,'included':included,'preference_candidates':included,
-        'model_sections':models,'deferred':deferred,'coverage':coverage,
+        'model_sections':models,'deferred':deferred,'coverage':coverage,'already_delivered_this_session':repeated,
         'budget':dict(result.get('budget') or {}),'next_cursor':result.get('next_cursor')}
 
 
@@ -249,7 +332,8 @@ def _task_state_context(task_state: dict, session_id: str, budget: int) -> str:
     """Bound a duplicate task preview without cutting the manual/map or JSON."""
     start, end = '\n<evolving_profile_task_state>\n', '\n</evolving_profile_task_state>'
     fields = ('current_objective','current_message','continuation','continuation_context','source','authority','version',
-              'update_reason','expires_at','constraints','completed','unresolved','objects','source_versions')
+              'update_reason','expires_at','constraints','completed','unresolved','objects','source_versions',
+              'working_state_schema','working_state')
     block = {key:task_state[key] for key in fields if task_state.get(key) is not None}
 
     def render(value):
@@ -314,9 +398,12 @@ def prepare_agent_owned_entry(hook_input: dict, prompt: str, *, memory_policy: s
             candidate_request=dict(request,max_tokens=5000)
             guidance_result=_call_preference(candidate_request)
             remaining=max(0,AGENT_ENTRY_MAX_CONTEXT_CHARS-len(context)-400)
-            guidance_context,guidance_rendered=render_entry(guidance_result,prompt,max_chars=remaining,include_instruction=False)
-            if remaining:
+            ledger=SessionDeliveryLedger(TASK_STATE_ROOT,session_id) if session_id else None
+            guidance_context,guidance_rendered=render_entry(guidance_result,prompt,max_chars=remaining,include_instruction=False,ledger=ledger)
+            if remaining and guidance_context:
                 context += '\n' + guidance_context
+            if ledger is not None:
+                ledger.save()
         except Exception:
             guidance_result={'coverage':'unavailable','included':[],'deferred':[]}
             guidance_rendered['coverage']='unavailable'
@@ -356,7 +443,7 @@ def run_entry_check(hook_input: dict, prompt: str, *, memory_policy: str = "allo
                     "current_objective", "current_message", "continuation",
                     "continuation_context", "source", "authority", "version",
                     "update_reason", "expires_at", "constraints", "completed",
-                    "unresolved", "objects", "source_versions",
+                    "unresolved", "objects", "source_versions", "working_state_schema", "working_state",
                 )
             }
         except OSError:
@@ -375,7 +462,7 @@ def run_entry_check(hook_input: dict, prompt: str, *, memory_policy: str = "allo
                 "current_objective", "current_message", "continuation",
                 "continuation_context", "source", "authority", "version",
                 "update_reason", "expires_at", "constraints", "completed",
-                "unresolved", "objects", "source_versions",
+                "unresolved", "objects", "source_versions", "working_state_schema", "working_state",
             )
         }
         context += "\n<evolving_profile_task_state>\n" + json.dumps(task_block, ensure_ascii=False) + "\n</evolving_profile_task_state>"

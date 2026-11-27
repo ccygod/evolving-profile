@@ -139,6 +139,8 @@ def runtime_event_text(task):
 
 def scoped_out(unit,task):
     scope=unit.get('scope') or {}
+    if not isinstance(scope,dict):
+        return False
     for scope_key,task_key in (('project_ids','project_ids'),('task_ids','task_ids'),('session_ids','session_ids'),('agent_roles','agent_roles')):
         required=set(scope.get(scope_key) or [])
         actual=set(task.get(task_key) or [])
@@ -213,7 +215,7 @@ def rank(units,task):
         if not shared and not contextual and lexical<.045:continue
         condition_match=any(c and c in current for c in unit.get('applies_when',[]))
         domain_match=bool(unit_domains & task_domains)
-        cross_cutting=bool((unit.get('scope') or {}).get('cross_cutting'))
+        cross_cutting=bool(unit.get('scope').get('cross_cutting')) if isinstance(unit.get('scope'),dict) else False
         learning_match=unit.get('primary_category')=='learning' and 'explanation' in shared
         recommendation_match='recommendation' in shared
         if shared and not focused and not condition_match and not domain_match and not cross_cutting and not learning_match and not recommendation_match and lexical<.06:continue
@@ -256,8 +258,62 @@ def semantic_rank(units, task, embed_many):
         return []
     return semantic_candidates_with_batch(units, query, embed_many=embed_many, task=task)
 
+def semantic_thresholds():
+    """(on-topic floor, corroboration floor) for corpus-centered cosine."""
+    from semantic_recall import CENTERED_SEMANTIC_FLOOR, CENTERED_CORROBORATION_FLOOR
+    floor,corroboration=CENTERED_SEMANTIC_FLOOR,CENTERED_CORROBORATION_FLOOR
+    try:
+        path=os.getenv('EVOLVING_PROFILE_GUIDANCE_SETTINGS',str(Path.home()/'.evolving-profile/config/guidance-settings.json'))
+        with open(path,encoding='utf-8') as handle:value=json.load(handle)
+        floor=float(value.get('semantic_centered_floor',floor))
+        corroboration=float(value.get('semantic_corroboration_floor',corroboration))
+    except (OSError,ValueError,TypeError):pass
+    return max(0.0,min(1.0,floor)),max(-1.0,min(1.0,corroboration))
+
+
+# A unit that names a product or platform the task never mentions is not made
+# applicable by resembling the prompt; softer risks stay visible to the Agent.
+_HARD_APPLICABILITY_RISKS={'named_condition_unmentioned','platform_condition_unmentioned'}
+
+
+def _apply_centered_semantics(ranked,units,task,service,*,max_backfill=2):
+    """Two independent signals must agree before weak evidence reaches the Agent.
+
+    Lexical 'core' matches stand on their own. A lexical 'related' match is kept
+    only when semantics does not contradict it, and a purely semantic match is
+    added only when it clears the on-topic floor. Returns (ranked, gate report).
+    """
+    floor,corroboration=semantic_thresholds()
+    scores=service.centered_scores(units,task)
+    kept=[];dropped=[]
+    for unit,reason in ranked:
+        score=scores.get(unit['id'])
+        if score is not None:
+            reason['semantic']={'source':'semantic_centered','score':round(score,4)}
+            if reason.get('tier')=='related' and score<corroboration:
+                dropped.append(unit['id']);continue
+        kept.append((unit,reason))
+    present={unit['id'] for unit,_ in kept}|set(dropped)
+    by_id={unit['id']:unit for unit in units}
+    backfill=[]
+    for unit_id,score in sorted(scores.items(),key=lambda row:(row[1],row[0]),reverse=True):
+        if score<floor or len(backfill)==max_backfill:break
+        unit=by_id[unit_id]
+        if unit_id in present or semantic_condition_conflicts(unit,task):continue
+        risks=semantic_applicability_risks(unit,task)
+        if _HARD_APPLICABILITY_RISKS.intersection(risks):continue
+        backfill.append((unit,{'intents':[],'focused':[],'context_intents':[],'lexical':0.0,'score':round(score,4),
+                               'tier':'semantic_backfill','semantic':{'source':'semantic_centered','score':round(score,4)},
+                               'applicability_risks':risks}))
+    top=max(scores.values()) if scores else None
+    gate={'mode':'centered','floor':floor,'corroboration_floor':corroboration,'scored_units':len(scores),
+          'top_score':round(top,4) if top is not None else None,
+          'lexical_related_dropped':len(dropped),'semantic_backfill':len(backfill)}
+    return _deduplicate_ranked(backfill+kept),gate
+
+
 def compact_unit(unit,why):
-    result={k:unit.get(k) for k in ('id','revision','primary_category','nature','text','scope','applies_when','exceptions','effect_on_action')}
+    result={k:unit.get(k) for k in ('id','revision','primary_category','nature','scope_level','enforcement','text','scope','applies_when','exceptions','effect_on_action')}
     result['content_sha256']=sha256(json.dumps({key:unit.get(key) for key in ('text','applies_when','exceptions','effect_on_action')},ensure_ascii=False,sort_keys=True).encode()).hexdigest()
     result['source_locator']={'tool':'read_preference_unit','id':unit['id'],'revision':unit['revision'],'evidence_count':len(unit.get('evidence_refs') or [])}
     result['evidence_manifest']=[{key:ref.get(key) for key in ('memory_id','document_id','chunk_id','stored_role','origin','source_revision')}
@@ -288,10 +344,13 @@ def select(repo,request,char_budget=None):
             if start<0:raise ValueError()
         except Exception:result.update(coverage='cursor_invalidated',errors=['cursor_scope_or_revision_changed']);return result
     loaded={(r.get('id'),r.get('revision'),r.get('content_sha256')) for r in request.get('loaded',[]) if isinstance(r,dict)}
-    active_units=[unit for unit in repo.active_units() if not scoped_out(unit,task)]
+    active_units=[unit for unit in repo.active_units() if unit.get('inject_default') is not False and not scoped_out(unit,task)]
     from profile_projection import stable_profile
     result['stable_profile']=stable_profile(active_units)
     ranked=rank(active_units,task)
+    # Prioritize hard_guardrail preferences within matching candidates while keeping relevance order
+    _ENFORCEMENT_RANK = {'hard_guardrail': 0, 'default_policy': 1, 'soft_style': 2}
+    ranked.sort(key=lambda pair: (_ENFORCEMENT_RANK.get(pair[0].get('enforcement'), 1), -float(pair[1].get('score') or 0.0)))
     semantic_embed_many=request.get('_semantic_embed_many')
     semantic_status='not_configured'
     semantic_service=None
@@ -303,7 +362,15 @@ def select(repo,request,char_budget=None):
         semantic_service=SemanticRecallService(
             LocalGuidanceEmbeddingClient(f'{base.rstrip("/")}/v1/default/banks/{bank}/internal/guidance-embeddings'),cache
         )
-    if callable(semantic_embed_many) or semantic_service is not None:
+    centered=semantic_service is not None and not callable(semantic_embed_many) and os.getenv('EVOLVING_PROFILE_GUIDANCE_SEMANTIC_MODE','centered')!='raw'
+    if centered:
+        try:
+            ranked,gate=_apply_centered_semantics(ranked,active_units,task,semantic_service)
+            result['semantic_gate']=gate
+            semantic_status='available'
+        except Exception as exc:
+            semantic_status='degraded:'+type(exc).__name__
+    elif callable(semantic_embed_many) or semantic_service is not None:
         try:
             semantic_results=(semantic_rank(active_units,task,semantic_embed_many) if callable(semantic_embed_many)
                               else semantic_service.candidates(active_units,task))
@@ -345,6 +412,13 @@ def select(repo,request,char_budget=None):
     refs={(u['id'],u['revision']) for u in result['included']+result['already_loaded_valid']}
     result['preference_candidates']=[{**item,'status':'candidate_requires_agent_judgment'} for item in result['included']]
     allowed={(u['id'],u['revision']) for u in active_units if (u.get('preference_audit') or {}).get('state') in {'approved','restricted'}}
+    # A unit retired as a restatement of a reviewed unit is still reviewed
+    # content: its model sections stay eligible through the unit that replaced it.
+    allowed_ids={unit_id for unit_id,_ in allowed}
+    allowed|={(u['id'],u['revision']) for u in active_units
+              if (u.get('preference_audit') or {}).get('state')=='superseded'
+              and str((u.get('preference_audit') or {}).get('reason') or '').startswith('semantic_duplicate_of_')
+              and (u.get('preference_audit') or {}).get('superseded_by') in allowed_ids}
     for m in repo.active_models():
         for section in m.get('sections',[]):
             sr={(r.get('id'),r.get('revision')) for r in section.get('guidance_refs',[])}

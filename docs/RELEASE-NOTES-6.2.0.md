@@ -10,7 +10,7 @@
 ## 本次变更
 
 - 冷热分层与准入去重：`v6/memory_tiering.py`，调度器作业 `memory-tiering`（仅在配置了 Bank 时启用）。
-- 半精度向量：API 迁移 `e2f3a4b5c6d7`；`engine/retain/bank_utils.py` 新建 Bank 索引使用 `halfvec_cosine_ops`；`EVOLVING_PROFILE_EMBEDDING_STORAGE=vector` 可退出。
+- 半精度向量：API 迁移 `f3a4b5c6d7e8`；`engine/retain/bank_utils.py` 新建 Bank 索引使用 `halfvec_cosine_ops`；`EVOLVING_PROFILE_EMBEDDING_STORAGE=vector` 可退出。
 - 时间关系上限 20 → 10：`engine/retain/link_utils.py`。
 - 事件日志保留：`v6/events_retention.py`，调度器作业 `events-retention`；归档表 `ep_events.tool_event_archive`、`ep_events.pruned_tool_sessions`。
 - 研究工作区过期清理修复：`host-adapter/evidence_workspace.py`。
@@ -22,7 +22,7 @@
 
 ## 升级与回退
 
-见 [CHANGELOG-6.2.md](../CHANGELOG-6.2.md) 的 Upgrade 一节。要点：先决定是否保留 32 位向量再跑迁移；`events-retention` 在已安装的 `events/ledger.py` 不含归档会话保护时自动跳过；6.1 的常驻 MCP 进程需重连一次才能获得热更新。回退：`alembic downgrade d1e2f3a4b5c6`、`python -m v6.memory_tiering restore --reason <r>`、`python -m v6.events_retention restore <archive_id>`。
+见 [CHANGELOG-6.2.md](../CHANGELOG-6.2.md) 的 Upgrade 一节。要点：先决定是否保留 32 位向量再跑迁移；`events-retention` 在已安装的 `events/ledger.py` 不含归档会话保护时自动跳过；6.1 的常驻 MCP 进程需重连一次才能获得热更新。回退：`alembic downgrade e2f3a4b5c6d7`、`python -m v6.memory_tiering restore --reason <r>`、`python -m v6.events_retention restore <archive_id>`。
 
 ## 已知边界
 
@@ -41,7 +41,7 @@
 | Guidance | `pytest`（发行仓库） | 141 通过 | 2026-11-24 |
 | v6 | `pytest v6/tests` | 24 通过（含新增 5 项存储治理测试） | 2026-11-24 |
 | API | 与改动相关的单元测试 | 68 通过；另 89 项需独立测试库（未安装 pg0-embedded），未运行 | 2026-11-24 |
-| API 迁移 | `e2f3a4b5c6d7` 在约 7.5 万条记忆的实库上执行 upgrade、重复 upgrade（无操作）、downgrade、upgrade | 均成功，单次约 13 秒；召回 hit@10 前后均为 87/100 | 2026-11-24 |
+| API 迁移 | `f3a4b5c6d7e8` 在约 7.5 万条记忆的实库上执行 upgrade、重复 upgrade（无操作）、downgrade、upgrade | 均成功，单次约 13 秒；召回 hit@10 前后均为 87/100 | 2026-11-24 |
 | Console | `vitest`、`tsc --noEmit`、`next build` | 669 通过；类型检查与生产构建通过 | 2026-11-24 |
 | 实际宿主链路 | 私有运行环境中 `user_research`、`ep_exhaustive_search` 等 MCP 实调 | 正常 | 2026-11-24 |
 

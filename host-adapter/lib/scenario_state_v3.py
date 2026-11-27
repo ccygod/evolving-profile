@@ -90,9 +90,12 @@ CORRECTION_HINT = re.compile(r"不要|别再|别写|不是|改成|改为|更正|
 
 def whole_user_clauses(text):
     """Whole sentences or explicit list items; commas never split conditions."""
-    answers=parse_form_reply(text)
-    if answers:return [f"问题：{r['question']} 回答：{r['answer']}" for r in answers]
     normalized=' '.join(str(text).split())
+    # Proven native forms have already become exact answer text upstream.
+    # An envelope still present here is literal source, not permission to
+    # synthesize Q/A prose which the exact raw quote directory cannot locate.
+    if FORM_PATTERN.fullmatch(str(text or '')):
+        return [normalized] if normalized else []
     clauses=[normalized] if normalized else []
     segments=[];start=0
     for delimiter in re.finditer(r'[。；;？！]|[!?](?=\s|$)',normalized):
@@ -122,11 +125,29 @@ def whole_user_clauses(text):
     return list(dict.fromkeys(c for c in clauses if c))
 
 
+def _clause_source_text(message):
+    """The user text the model is shown, so a faithful quote of it can verify.
+
+    A parseable form reply is shown as "问题：… 回答：…" (see
+    project_source_messages); checking quotes against its raw JSON instead
+    rejected every constraint taken from a form answer.
+    """
+    raw=str(message.get('text') or '')
+    form_context=message.get('form_reply_context')
+    if isinstance(form_context,dict) and form_context.get('schema')=='evolving-profile.native-form-answer.v1':
+        return raw
+    if raw.lstrip().startswith(f"<{FORM_TAG}>") and not message.get('form_reply_unverified'):
+        answers=parse_form_reply(raw)
+        if answers:
+            return "；".join(f"问题：{item['question']} 回答：{item['answer']}" for item in answers)
+    return raw
+
+
 def user_clause_catalog(source):
     from source_safety import mask_text
     return [{'message_id':m['evidence_id'],'clauses':[
         {'clause_index':index,'text':mask_text(c),'eligible':len(c)<=STATE_LIMITS.get('verbatim_text_max_chars_per_claim',STATE_LIMITS['text_max_chars_per_claim']) and mask_text(c)==c}
-        for index,c in enumerate(whole_user_clauses(m['text']))]} for m in source['messages'] if m['role']=='user']
+        for index,c in enumerate(whole_user_clauses(_clause_source_text(m)))]} for m in source['messages'] if m['role']=='user']
 
 
 def source_clause_transport(source,messages):
@@ -215,7 +236,10 @@ def project_source_messages(source: dict) -> list[dict]:
     projected = []
     for row in source.get("messages") or []:
         raw = str(row.get("text") or "")
-        if raw.lstrip().startswith(f"<{FORM_TAG}>"):
+        form_context = row.get('form_reply_context')
+        if isinstance(form_context,dict) and form_context.get('schema')=='evolving-profile.native-form-answer.v1':
+            body, kind = raw, 'native_structured_user_answer'
+        elif raw.lstrip().startswith(f"<{FORM_TAG}>") and not row.get('form_reply_unverified'):
             answers = parse_form_reply(raw)
             if answers:
                 body = "；".join(f"问题：{item['question']} 回答：{item['answer']}" for item in answers)
@@ -230,6 +254,9 @@ def project_source_messages(source: dict) -> list[dict]:
         projected.append({"message_id": row.get("evidence_id"), "role": row.get("role"),
                           "at": row.get("at"), "turn_id": row.get("turn_id"),
                           "text": mask_text(body), "provenance_kind": kind})
+        if isinstance(form_context,dict) and form_context.get('schema')=='evolving-profile.native-form-answer.v1':
+            projected[-1].update(question_context=[mask_text(q) for q in form_context['questions']],
+                question_authority='assistant_question_context_not_user_request')
     return projected
 
 

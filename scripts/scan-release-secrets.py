@@ -9,7 +9,8 @@ import subprocess
 
 GENERATED={'.git','.superpowers','node_modules','.venv','.next','standalone','output','__pycache__','.pytest_cache'}
 LOCAL_ENV={'.env','.env.local','.env.development.local','.env.production.local','.env.test.local'}
-PATTERNS=[('api_key',re.compile(r'(?:sk-|gsk_)[A-Za-z0-9]{12,}')),
+# A key starts a token, so words that merely contain the prefix (task-notification) are not keys.
+PATTERNS=[('api_key',re.compile(r'(?<![A-Za-z0-9])(?:sk-|gsk_)[A-Za-z0-9]{12,}')),
     ('cloud_key',re.compile(r'AKIA[0-9A-Z]{16}')),
     ('private_key',re.compile(r'BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY')),
     ('personal_name',re.compile('\u5218\u4e2d\u6d0b'))]

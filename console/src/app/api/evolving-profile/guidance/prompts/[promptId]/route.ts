@@ -30,7 +30,7 @@ async function localPromptDetail(promptId: string) {
   try {
     const raw=(await readFile(PROMPT_INGRESS_PATH,"utf8")).trim().split("\n").map(line=>JSON.parse(line));
     const ingress=[...raw,...await readReplayPrompts()].findLast(row=>`${row.prompt_fingerprint}:${row.at}`===promptId);
-    if (!ingress?.turn_id) return null;
+    if (!ingress?.turn_id && !ingress?.hook_invocation_id) return null;
     const files = await readdir(HOOK_RECEIPTS_PATH);
     const hooks = await Promise.all(files.filter((file) => file.endsWith(".json")).map(async (file) => { try { return JSON.parse(await readFile(path.join(HOOK_RECEIPTS_PATH, file), "utf8")); } catch { return null; } }));
     const hook = hooks.find((row: any) => samePromptBinding(ingress,row));

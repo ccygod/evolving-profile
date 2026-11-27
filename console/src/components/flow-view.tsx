@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 
 import { inlineUiText } from "@/lib/inline-i18n";
-import { ExecutionTopologyCanvas } from "@/components/execution-topology-canvas";
+import { PromptJourney } from "@/components/prompt-journey";
 import { SourceNavigationDetails } from "./source-navigation-details";
 import {PromptSourceSummary,PromptSourceEmpty,PromptOriginBadge,type PromptSourceCounts} from "./prompt-source-summary";
 type NodeId = "entry" | "map" | "guidance" | "history" | "answer";
@@ -76,6 +76,19 @@ type RouteDecision = {
   catalog_hints?: CatalogHint[];
   agent_may_override?: boolean;
 };
+type HostOption = { id: string; labels?: Record<string, string> };
+const FALLBACK_HOST_OPTIONS: HostOption[] = [
+  { id: "codex", labels: { en: "Codex", "zh-CN": "Codex" } },
+  { id: "trae", labels: { en: "Trae", "zh-CN": "Trae" } },
+  { id: "claude_code_cli", labels: { en: "Claude Code CLI", "zh-CN": "Claude Code 命令行" } },
+  { id: "claude_code_desktop_local", labels: { en: "Claude desktop · local Code", "zh-CN": "Claude 桌面端·本地 Code" } },
+  { id: "claude_desktop_chat", labels: { en: "Claude Desktop · Chat", "zh-CN": "Claude 桌面端·普通聊天" } },
+  { id: "hermes", labels: { en: "Hermes", "zh-CN": "Hermes" } },
+  { id: "antigravity", labels: { en: "Antigravity", "zh-CN": "Antigravity" } },
+  { id: "workbuddy", labels: { en: "Tencent WorkBuddy", "zh-CN": "腾讯 WorkBuddy" } },
+  { id: "doubao_work", labels: { en: "Doubao Work", "zh-CN": "豆包工作任务" } },
+  { id: "generic_mcp", labels: { en: "Other MCP client", "zh-CN": "其他 MCP 客户端" } },
+];
 const FLOW_COPY = {
   zh: {
     intro: "左侧选择用户 Prompt，中间查看本轮路径，右侧查看节点真实回执。",
@@ -499,6 +512,7 @@ export function FlowView() {
   const [cursor, setCursor] = useState(0);
   const [query, setQuery] = useState("");
   const [host, setHost] = useState("all");
+  const [hostOptions, setHostOptions] = useState<HostOption[]>(FALLBACK_HOST_OPTIONS);
   const [promptSource,setPromptSource]=useState("natural");
   const [sourceCounts,setSourceCounts]=useState<PromptSourceCounts>({natural:null,audit:null});
   const [hasMore, setHasMore] = useState(false);
@@ -514,6 +528,18 @@ export function FlowView() {
   // as a real injection for the newly selected prompt.
   const currentRow = selectedDetail?.prompt_id === selected?.prompt_id ? selectedDetail : null;
   const navigation = mapMode === "latest" ? latestNavigation : currentRow?.navigation_map;
+  useEffect(() => {
+    const abort = new AbortController();
+    fetch("/api/evolving-profile/host-catalog", { cache: "no-store", signal: abort.signal })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (Array.isArray(payload.profiles) && payload.profiles.length) {
+          setHostOptions(payload.profiles);
+        }
+      })
+      .catch(() => undefined);
+    return () => abort.abort();
+  }, []);
   useEffect(() => {
     if (!mapOpen) return;
     const abort = new AbortController();
@@ -540,7 +566,8 @@ export function FlowView() {
         setHasMore(Boolean(payload.has_more));
         setSourceCounts({natural:typeof payload.natural_total==="number"?payload.natural_total:null,audit:typeof payload.audit_total==="number"?payload.audit_total:null,
           verification:payload.source_verification_status==="partial" || payload.source_verification_status==="complete" ? payload.source_verification_status:null,
-          pending:typeof payload.source_verification_pending_total==="number"?payload.source_verification_pending_total:null});
+          pending:typeof payload.source_verification_pending_total==="number"?payload.source_verification_pending_total:null,
+          scope:typeof payload.source_scope==="string"?payload.source_scope:null});
       return nextRows;
     } catch (cause) {
       if (!(cause instanceof Error && cause.name === "AbortError")) setError(inlineUiText("链路记录暂时不可读取。请刷新后重试。"));
@@ -738,14 +765,16 @@ export function FlowView() {
               onChange={(event) => {
                 setCursor(0);
                 setHost(event.target.value);
+                if (["trae", "workbuddy", "doubao_work"].includes(event.target.value)) setPromptSource("all");
               }}
               className="bg-transparent font-medium text-foreground outline-none"
             >
               <option value="all">{english ? "All" : inlineUiText("全部")}</option>
-              <option value="codex">Codex</option>
-              <option value="hermes">Hermes</option>
-              <option value="claude-code">{inlineUiText("Claude Code")}</option>
-              <option value="codex-cli">{inlineUiText("Codex CLI")}</option>
+              {hostOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.labels?.[locale] ?? option.labels?.[locale.startsWith("zh") ? "zh-CN" : "en"] ?? option.id}
+                </option>
+              ))}
             </select>
           </label>
           <PromptSourceSummary counts={sourceCounts}>
@@ -846,7 +875,7 @@ export function FlowView() {
                 <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-dashed bg-background/70 p-8 text-center" role="status" aria-live="polite">
                   <div className="space-y-3 text-sm text-muted-foreground"><RefreshCw className="mx-auto h-6 w-6 animate-spin text-primary" /><p>{english ? "Loading this prompt's bound receipts…" : "正在读取本条 Prompt 的绑定回执…"}</p><p className="text-xs">{english ? "This is loading, not an empty result." : "当前仍在读取中，不代表没有记忆或没有调用。"}</p></div>
                 </div>
-              ) : currentRow ? <ExecutionTopologyCanvas promptId={currentRow.prompt_id} promptText={currentRow.user_prompt} english={english} audit={audit} guidanceReceipt={currentRow.guidance_receipt} /> : <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-dashed bg-background/70 p-8 text-center text-sm text-muted-foreground">{english ? "Select a user prompt to view its bound receipts." : "请选择一条用户 Prompt 查看绑定回执。"}</div>}
+              ) : selected ? <PromptJourney row={selected as any} english={english} /> : <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-dashed bg-background/70 p-8 text-center text-sm text-muted-foreground">{english ? "Select a user prompt to view its bound receipts." : "请选择一条用户 Prompt 查看绑定回执。"}</div>}
             </div>
             {showLegacyFlow && <div className="legacy-flow-detail rounded-xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
             <div className="mb-5 flex flex-wrap items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
@@ -1303,7 +1332,7 @@ export function FlowView() {
                 </button>)}
               </div>
             </section>
-            {browseTopic && <NavigationTopicBrowser topicId={browseTopic} bankId={params.bankId} />}
+            {browseTopic && params?.bankId && <NavigationTopicBrowser topicId={browseTopic} bankId={params.bankId} />}
             <section className="border-t pt-4">
               <h3 className="font-semibold">{inlineUiText("L1 · 目录预览")}</h3>
               <p className="mt-2 text-sm text-muted-foreground">{navigation.bank?.hierarchy_coverage?.leaf_count ? `${navigation.bank.hierarchy_coverage.leaf_count} 个具体主题覆盖已归组记录。` : inlineUiText("此快照尚无全库分层目录。")} {inlineUiText("名称索引")} {navigation.bank?.searchable_entity_count ?? "—"} {inlineUiText("项；另保留")} {navigation.bank?.entity_count ?? "—"} {inlineUiText("个实体详情预览。点击上方领域进入最新 L1，可查看来源与原文。")}</p>

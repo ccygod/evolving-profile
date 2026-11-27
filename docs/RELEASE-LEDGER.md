@@ -1,5 +1,12 @@
 # Evolving Profile Release Ledger
 
+### 2026-11-26：6.2.1 链路图同步
+
+- 问题：历次发版只选择性同步部分文件。逐模块对比发现约 110 个文件代码不同、约 140 个文件只在本机，链路图只是其中被看到的一处。
+- 本次更新：全部审查并同步（保留发行版脱敏写法与仓库独有修复）；修复迁移编号冲突（halfvec 改为 `f3a4b5c6d7e8`，并补 Worker 租约字段）、保留回执丢失恢复、宿主记录读取范围、Python 3.9 导入；新增 `scripts/release-parity.py` 发版对齐检查。
+- 本地验证：见 CHANGELOG-6.2.md 6.2.1 节。
+- GitHub 状态：推送 `main`、`release/6.2.0`、Tag `v6.2.1` 至 gtkj 与 ccygod；`v6.2.0` 不移动。
+
 ### 2026-11-24：6.2.0 存储治理与可靠性
 
 - 产品版本：6.2.0（VERSION 与 config/release-manifest.json）。基线：`main` 上的 6.1.0 后续修复 `7be2093`。

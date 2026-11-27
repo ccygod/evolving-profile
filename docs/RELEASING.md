@@ -25,12 +25,15 @@
 在本发行仓库根目录运行：
 
 ```bash
+python3 scripts/release-parity.py
 python3 -m unittest scripts/test_release_preflight.py
 python3 scripts/release-preflight.py --json
 ./scripts/verify-package.sh
 git diff --check
 git status --short
 ```
+
+`release-parity.py` 按本机配置（`~/.evolving-profile/config/release-parity.json`，不入库）逐模块比较发行仓库与实际运行的代码：只在运行环境存在、或代码不同且未在配置中说明原因的文件都会让它失败。6.2.0 及更早版本正是因为缺少这一步，长期漏发了链路图等组件。
 
 `release-preflight.py` 会检查产品版本在 VERSION、README、NOTICE、CHANGELOG 和链路页标识中是否一致，并打印当前分支、远端和提交作者快照。`verify-package.sh` 再检查结构、秘密/个人数据模式及核心 Python 语法。它们**不能**证明前端功能、Bank 迁移、MCP 宿主送达或 GitHub Release 已完成。
 

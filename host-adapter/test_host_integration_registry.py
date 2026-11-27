@@ -15,6 +15,7 @@ def test_all_profiles_have_separate_capability_evidence():
         'claude_desktop_chat','hermes','workbuddy','doubao_work','antigravity','generic_mcp'}
     assert all('macos' in r['platforms'] and 'windows' in r['platforms'] for r in rows)
     assert next(r for r in rows if r['id']=='doubao_work')['documented']['prompt_hook'] is None
+    assert next(r for r in rows if r['id']=='trae')['transports']==['stdio','sse','streamable_http']
 
 
 def test_probe_never_proves_native_host():
@@ -37,12 +38,41 @@ def test_version_change_expires_observation():
     result = readiness(profile,[observation],context)
     assert result['capabilities']['mcp_stdio']['state'] != 'host_verified'
     assert result['capabilities']['mcp_stdio']['stale'] is True
+    assert result['capabilities']['mcp_stdio']['stale_reason'] == 'host_context_mismatch'
+    assert result['capabilities']['mcp_stdio']['next_action'] == 'rerun_native_host_task'
+    assert result['next_actions'] == ['rerun_native_host_task']
 
 
 def test_missing_hook_is_unknown():
     from lib.host_integration.readiness import readiness
     profile = next(r for r in registry()['profiles'] if r['id']=='doubao_work')
     assert readiness(profile,[],{})['capabilities']['prompt_hook']['state']=='unknown'
+
+
+def test_session_association_is_explicitly_unverified_without_parser():
+    from lib.host_integration.readiness import readiness
+    profile = next(r for r in registry()['profiles'] if r['id']=='trae')
+    result = readiness(profile, [], {})
+    assert result['session_association']['state'] == 'unverified'
+    assert result['session_association']['receipt'] == 'not_measured'
+
+
+def test_native_receipt_projects_session_transcript_and_receipt():
+    from lib.host_integration.readiness import readiness
+    profile = next(r for r in registry()['profiles'] if r['id']=='trae')
+    context = {'host_version':'3.4.15','adapter_revision':'a','config_sha256':'c','mode':'local','platform':'macos'}
+    row = {**context,'host_id':'trae','capability_id':'mcp_stdio','evidence_kind':'native_host',
+           'state':'host_verified','probe_id':'native-trae-1','observed_at':'2026-11-08T00:44:00Z',
+           'session_association':{'state':'host_verified','parser':None,'session_id':'trae-session',
+                                  'installation_id':'cn.trae.app@3.4.15','transcript':'source_read',
+                                  'transcript_path':'/tmp/trae.jsonl','receipt':'received',
+                                  'receipt_kind':'native_hook_posttool'}}
+    result = readiness(profile,[row],context)
+    assert result['capabilities']['mcp_stdio']['state']=='host_verified'
+    assert result['session_association']['state']=='host_verified'
+    assert result['session_association']['session_id']=='trae-session'
+    assert result['session_association']['transcript']=='source_read'
+    assert result['session_association']['receipt']=='received'
 
 
 def test_mode_and_platform_evidence_do_not_leak():

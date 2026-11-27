@@ -143,11 +143,26 @@ def admission_contract_revision() -> str:
 ADMISSION_CONTRACT_REVISION = admission_contract_revision()
 
 
-def controller_turn_headers(hook_input: dict, source_revision: str, mode: str) -> dict[str, str]:
+def admission_turn_id(hook_input: dict, invocation_id: str = "") -> str:
+    """The turn identity an admission decision is bound to.
+
+    Codex sends a turn id; Claude Code's UserPromptSubmit does not. The
+    Controller rejects a binding with an empty turn id (and counts the failure
+    against its health), so for a host that sends none the UserPromptSubmit
+    invocation is the turn: one prompt, one invocation. The header sent and the
+    context verified later must use this same function.
+    """
+    turn = str(hook_input.get("turn_id") or "").strip()
+    if turn:
+        return turn[:160]
+    return ("invocation:" + str(invocation_id))[:160] if invocation_id else ""
+
+
+def controller_turn_headers(hook_input: dict, source_revision: str, mode: str, invocation_id: str = "") -> dict[str, str]:
     """Build bounded, non-content headers that bind one Controller decision."""
     return {
         "X-Memory-Session-Id": str(hook_input.get("session_id") or "")[:160],
-        "X-Memory-Turn-Id": str(hook_input.get("turn_id") or "")[:160],
+        "X-Memory-Turn-Id": admission_turn_id(hook_input, invocation_id),
         "X-Memory-Source-Revision": str(source_revision or "unavailable")[:160],
         "X-Memory-Admission-Mode": str(mode or "legacy").casefold()[:32],
     }
@@ -297,16 +312,51 @@ def qwen_full_prompt_fallback(prompt: str, messages: list[dict], *, timeout_ms: 
         return {"ok": False, "reason": "coding_plan_full_prompt_failed", "error": type(error).__name__}
 
 
-def _with_entry_guidance(context: str = "") -> str:
+def _host_inline_limit():
+    """Characters the calling host keeps inline from a Hook context, or None if unknown."""
+    from lib.host_fit import host_limit
+    host = os.environ.get("EVOLVING_PROFILE_HOST_ID") or os.environ.get("HINDSIGHT_AGENT_NAME") or "codex"
+    overrides = None
+    try:
+        with open(Path.home() / ".evolving-profile/config/guidance-settings.json", encoding="utf-8") as stream:
+            overrides = json.load(stream).get("host_inline_limits")
+    except (OSError, ValueError, AttributeError):
+        pass
+    return host_limit(host, overrides if isinstance(overrides, dict) else None)
+
+
+def _with_entry_guidance(context: str = "", *, record: bool = False) -> str:
     combined = ENTRY_GUIDANCE_CONTEXT + ("\n" + str(context or "") if ENTRY_GUIDANCE_CONTEXT and context else str(context or ""))
     # Bind before lengthy instructions/candidates can be truncated by a host.
     match = re.search(r'<evolving_profile_memory_route[^>]*check_id="([a-f0-9]{32})"', combined)
-    if match:
-        return ('<ep_prompt_binding check_id="' + match.group(1) + '">'
-                'Use this ID for every EP tool call and follow-up read in this Prompt, not a later Prompt. '
-                'Candidate return, original-source readback and verified outcome are separate.'
-                '</ep_prompt_binding>\n' + combined)
-    return combined
+    prefix = ('<ep_prompt_binding check_id="' + match.group(1) + '">'
+              'Use this ID for every EP tool call and follow-up read in this Prompt, not a later Prompt. '
+              'Candidate return, original-source readback and verified outcome are separate.'
+              '</ep_prompt_binding>\n') if match else ''
+    # A host that keeps only a preview of a long context loses the candidates and
+    # route hint behind the navigation map, so arrive inside the limit instead.
+    try:
+        from lib.host_fit import fit_to_limit
+        limit = _host_inline_limit()
+        combined, fit = fit_to_limit(combined, limit - len(prefix) if limit else None)
+        # Receipts re-derive the delivered text; only the real emission is logged.
+        if record and (fit["steps"] or not fit["fits"]):
+            _record_host_fit(fit)
+    except Exception:
+        pass  # fitting is best effort; the unfitted context is still correct
+    return prefix + combined
+
+
+def _record_host_fit(fit: dict) -> None:
+    try:
+        target = Path.home() / ".evolving-profile/audit/host-fit.jsonl"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() and target.stat().st_size > 1_000_000:
+            target.replace(target.with_suffix(".jsonl.1"))
+        with target.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), **fit}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 def emit_hook_output(context: str = "") -> None:
@@ -321,7 +371,7 @@ def emit_hook_output(context: str = "") -> None:
     json.dump({
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": _with_entry_guidance(context),
+            "additionalContext": _with_entry_guidance(context, record=True),
         }
     }, sys.stdout)
     sys.stdout.flush()
@@ -399,7 +449,7 @@ def emit_bounded_system_probe(hook_input, prompt, config, invocation_id):
             debug_log(config,'Memory access guard route receipt unavailable: '+type(error).__name__)
     identity={'session_id':hook_input.get('session_id'),'turn_id':hook_input.get('turn_id'),
               'hook_invocation_id':invocation_id}
-    route={k:plan[k] for k in ('recommended_route','history_dependency','minimum_action','reason','required_slots','context_source','candidate_policy','fallback_route','fallback_trigger','required_ep_tool','allow_native_memory')}
+    route={k:plan[k] for k in ('recommended_route','history_dependency','minimum_action','reason','required_slots','context_source','candidate_policy','fallback_route','fallback_trigger','required_ep_tool','allow_native_memory','history_cause','agent_process_history','route_channels','mandatory_history_tools','coverage_contract','fallback_channels') if k in plan}
     route['check_id']=invocation_id
     route_context='<evolving_profile_memory_route>\n'+json.dumps(route,ensure_ascii=False).replace('<','\\u003c')+'\n</evolving_profile_memory_route>'
     output=route_context+'\n'+context
@@ -417,12 +467,12 @@ def emit_bounded_system_probe(hook_input, prompt, config, invocation_id):
         'injected_items':probe['items'],'packet_delivery':{'state':'hook_stdout_write_completed'},
         'context_sha256':hashlib.sha256(_with_entry_guidance(output).encode()).hexdigest()}
     receipt.update({
-        'route_required': plan.get('recommended_route') in {'recall', 'research'},
+        'route_required': bool(plan.get('mandatory_history_tools')) or plan.get('recommended_route') in {'recall', 'research', 'multi_route'},
         'route_started': False,
         'tool_called': False,
         'returned_count': 0,
-        'delivery_state': 'not_started' if plan.get('recommended_route') in {'recall', 'research'} else 'not_required',
-        'unresolved': ['EP历史工具尚未调用；本地文件搜索或候选提示不计为历史核验'] if plan.get('recommended_route') in {'recall', 'research'} else [],
+        'delivery_state': 'not_started' if (plan.get('mandatory_history_tools') or plan.get('recommended_route') in {'recall', 'research', 'multi_route'}) else 'not_required',
+        'unresolved': ['EP历史工具尚未调用；本地文件搜索或候选提示不计为历史核验'] if (plan.get('mandatory_history_tools') or plan.get('recommended_route') in {'recall', 'research', 'multi_route'}) else [],
     })
     from evidence_workspace import _save
     lane='diagnostic' if is_shadow_replay() or hook_input.get('memory_prompt_origin')=='test_probe' else 'production'
@@ -440,7 +490,7 @@ def route_requires_ep_history(prompt: str, task: dict | None = None) -> bool:
     """
     from system_probe import plan_history
     plan = plan_history(prompt, task or {})
-    return plan.get('minimum_action') in {'recall_probe', 'agent_query', 'live_audit'} or plan.get('recommended_route') in {'recall', 'research', 'live_audit'}
+    return bool(plan.get('mandatory_history_tools')) or plan.get('minimum_action') in {'recall_probe', 'agent_query', 'live_audit'} or plan.get('recommended_route') in {'recall', 'research', 'live_audit', 'multi_route'}
 
 
 def publish_injection(context: str, payload: dict, config: dict) -> bool:
@@ -1432,7 +1482,14 @@ def record_prompt_ingress(config: dict, prompt: str, session_id: str, cwd: str, 
             "turn_id": turn_id,
             "task_id": str(task_id) if task_id else None,
             "hook_invocation_id": hook_invocation_id,
-            "host_id": os.environ.get("HINDSIGHT_AGENT_NAME") or "codex",
+            # Codex does not always inject EVOLVING_PROFILE_HOST_ID into a
+            # fresh session. Prefer the explicit host marker, then the bridge
+            # marker used by Trae/WorkBuddy, and only then use Codex's built-in
+            # default. This keeps ordinary new Codex prompts attributable
+            # without collapsing named non-Codex hosts into Codex.
+            "host_id": os.environ.get("EVOLVING_PROFILE_HOST_ID")
+                or os.environ.get("HINDSIGHT_AGENT_NAME")
+                or "codex",
             "cwd": str(cwd or ''),
             "transcript_path": str(transcript_path) if transcript_path else None,
             "model": str(model) if model else None,
@@ -1441,11 +1498,31 @@ def record_prompt_ingress(config: dict, prompt: str, session_id: str, cwd: str, 
             "project_key": hashlib.sha256(str(cwd or "").encode("utf-8")).hexdigest()[:16] if cwd else "",
             "prompt_preview": normalized[:600],
             "prompt_fingerprint": hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16],
-            "source": "codex-userpromptsubmit",
+            "source": f"{os.environ.get('EVOLVING_PROFILE_HOST_ID') or os.environ.get('HINDSIGHT_AGENT_NAME') or 'codex'}-userpromptsubmit",
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        # Personal/contact fields are indexed from the exact user message at
+        # ingress, so Codex/Trae/WorkBuddy do not depend on a later Stop hook
+        # to make a person's name or contact record searchable.  The raw
+        # prompt remains the source; this is only an additive local index.
+        try:
+            from lib.personal_records import record_messages
+            record_messages([{
+                'role': 'user',
+                'content': normalized,
+                'source_record': {
+                    'session_id': session_id,
+                    'turn_id': turn_id,
+                    'host_id': row['host_id'],
+                    'transcript_path': transcript_path,
+                },
+            }], session_id=str(session_id or ''), turn_id=str(turn_id or ''),
+                host_id=str(row['host_id'] or ''), transcript_path=str(transcript_path or ''))
+        except Exception:
+            # Personal indexing must never block prompt ingress.
+            pass
         return True
     except OSError:
         # A receipt must never make the prompt hook fail.
@@ -1517,6 +1594,8 @@ def format_memory_route_context(value: dict) -> str:
     route_instruction = (
         _coverage_instruction(coverage)
         if coverage else
+        "这是历史成因、失败路径或工具比较问题，必须并行调用 user_recall 核对用户项目事实；若涉及 Agent/工具执行，再调用 agent_recall；若涉及本轮链路，再调用 audit_thread_history。任一通道不可用时必须显式写入 channels_skipped，并用低成本 user_recall 降级，不能把未检索写成无记录。"
+        if route == "multi_route" else
         "单点历史问题必须实际调用 user_recall；若为空、主体不匹配或时间/范围不足，升级一次 user_research。"
         if route == "recall" else
         "这是开放盘点或多实体时间线，必须实际调用 user_research，并继续分页或回读原文。"
@@ -2838,7 +2917,7 @@ def main():
             request_headers={
                 "X-Memory-Role": memory_role,
                 "X-Memory-Client": memory_client,
-                **controller_turn_headers(hook_input, source_revision, admission_contract_mode),
+                **controller_turn_headers(hook_input, source_revision, admission_contract_mode, hook_invocation_id),
                 # The controller may expand a recall with previous turns.  Keep
                 # this fingerprint of the *current* user message so the audit
                 # can correlate it with UserPromptSubmit without pretending a
@@ -3429,7 +3508,7 @@ def main():
     controller_receipt = (response.get("query_controller") or {}) if isinstance(response, dict) else {}
     controller_contract_context = {
         "session_id": session_id,
-        "turn_id": str(hook_input.get("turn_id") or ""),
+        "turn_id": admission_turn_id(hook_input, hook_invocation_id),
         "hook_invocation_id": hook_invocation_id,
         "execution_id": str(controller_receipt.get("execution_id") or controller_receipt.get("query_id") or ""),
         "prompt_sha256": str(turn_identity.get("prompt_fingerprint") or ""),

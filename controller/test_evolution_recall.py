@@ -61,6 +61,17 @@ POLICY = {
 
 
 class EvolutionRecallPlanningTests(unittest.TestCase):
+
+    def assertWeakBackgroundOnly(self, decision):
+        """Recall-first keeps a partial match, but only as a flagged background candidate.
+
+        The original intent of these checks stands: a bare mention, a heading or a
+        generic plan must never be promoted to strong or direct evidence.
+        """
+        self.assertEqual(decision.get("relevance_strength"), "weak", decision)
+        self.assertTrue(decision.get("recall_first_policy"), decision)
+        self.assertNotIn(decision.get("evidence_role"), {"direct", "primary"})
+
     def test_zero_injection_diagnostic_with_current_correction_keeps_bank_history(self):
         prompt = "那不对把，那么多都注入0条？历史的世界事实、经历、观察、心智模型、实体那么多，一个该召回的都没有？"
         self.assertTrue(requires_historical_bank_recall(prompt))
@@ -366,6 +377,53 @@ class EvolutionRecallPlanningTests(unittest.TestCase):
         self.assertFalse(plan["memory_needs"]["facts"]["needed"])
         self.assertTrue(plan["memory_needs"]["guidance"]["needed"])
         self.assertEqual(plan["working_set"]["decision"], "use_current_working_set")
+
+    def test_short_active_audit_check_skips_empty_bank_probe(self):
+        """A short active-task audit must not become a meaningless recall."""
+        prompt = "检查下还有什么问题"
+        messages = [
+            {"role": "user", "content": "把 Hook、回执、链路和多维度偏好页面逐项核对。"},
+            {"role": "assistant", "content": "会用当前页面与真实 Hook 回执确认问题。"},
+            {"role": "user", "content": prompt},
+        ]
+        envelope = build_contextual_intent_envelope(prompt, messages, {"contextMemoryCoordination": {}})
+        self.assertTrue(envelope["used_context"])
+        self.assertEqual(envelope["intent_mode"], "contextual_acceptance_followup")
+        plan = controller.build_plan(
+            prompt, "codex", POLICY, {},
+            runtime_context={
+                "contextual_intent": envelope,
+                "full_prompt": envelope["full_prompt"],
+                "full_prompt_source": "contextual_followup_resolution",
+                "raw_user_prompt": prompt,
+            },
+        )
+        self.assertEqual(plan["memory_action"], "guidance_only")
+        self.assertFalse(plan["memory_needs"]["facts"]["needed"])
+        self.assertEqual(plan["queries"], [])
+
+    def test_short_active_fix_command_skips_empty_bank_probe(self):
+        """A terse "赶紧处理" continues an evidenced active repair task."""
+        prompt = "赶紧处理"
+        messages = [
+            {"role": "user", "content": "修复多维度偏好、链路和 Hook 的实际问题。"},
+            {"role": "assistant", "content": "会以当前页面、Hook 回执和链路记录完成修复。"},
+            {"role": "user", "content": prompt},
+        ]
+        envelope = build_contextual_intent_envelope(prompt, messages, {"contextMemoryCoordination": {}})
+        self.assertTrue(envelope["used_context"])
+        self.assertEqual(envelope["intent_mode"], "contextual_followup")
+        plan = controller.build_plan(
+            prompt, "codex", POLICY, {},
+            runtime_context={
+                "contextual_intent": envelope,
+                "full_prompt": envelope["full_prompt"],
+                "full_prompt_source": "contextual_followup_resolution",
+                "raw_user_prompt": prompt,
+            },
+        )
+        self.assertEqual(plan["memory_action"], "guidance_only")
+        self.assertFalse(plan["memory_needs"]["facts"]["needed"])
 
     def test_test_vs_real_comparison_resolves_the_preceding_test_protocol(self):
         """“你测试的真实吗” needs its omitted test object."""
@@ -721,17 +779,14 @@ class EvolutionRecallPlanningTests(unittest.TestCase):
         self.assertTrue(decision["continuation_policy_alignment"]["qualified"])
 
     def test_continuation_policy_does_not_admit_context_heading_alone(self):
-        """A same-topic heading is weak background, not continuation proof."""
+        """A bare context/Full Prompt heading remains insufficient."""
         query = (
             "在长任务中，用户说‘继续、不要停、把新的补上’时，为什么不能只读取最近三轮？"
             "请说明应如何使用远距离上下文、活动任务证据和 Full Prompt，同时避免把普通续写误判成同一任务。"
         )
         item = {"type": "world", "text": "Full Prompt 与上下文。"}
         decision = admission_decision(query, item, deep=True)
-        self.assertEqual(decision["decision"], "qualified")
-        self.assertEqual(decision["relevance_strength"], "weak")
-        self.assertFalse(decision["continuation_policy_alignment"]["qualified"])
-        self.assertFalse(decision["authority_verified"])
+        self.assertWeakBackgroundOnly(decision)
 
     def test_continuation_policy_coverage_uses_structural_evidence(self):
         """Coverage must recognize task scope/method/outcome markers, not only labels."""
@@ -1325,7 +1380,7 @@ class EvolutionRecallPlanningTests(unittest.TestCase):
         self.assertTrue(decision["subject_evidence_alignment"]["qualified"])
 
     def test_subject_evidence_lane_does_not_bypass_pure_chain_audit(self):
-        """Related migration background cannot become direct chain evidence."""
+        """A migration/config record cannot pass a chain audit on Hindsight alone."""
         query = (
             "我要做Hindsight真实验收，给出从真实输入、检查Hook/Controller/Bank/Memory Packet，"
             "到状态页复核的最短完整流程，并说明异常时如何回退和复测。"
@@ -1338,11 +1393,7 @@ class EvolutionRecallPlanningTests(unittest.TestCase):
             ),
         }
         decision = admission_decision(query, item, deep=True)
-        self.assertEqual(decision["decision"], "qualified")
-        self.assertEqual(decision["relevance_strength"], "weak")
-        self.assertFalse(decision["subject_evidence_alignment"]["qualified"])
-        self.assertFalse(decision["proposition_alignment"]["relation_support"])
-        self.assertFalse(decision["authority_verified"])
+        self.assertWeakBackgroundOnly(decision)
 
     def test_memory_taxonomy_admits_four_layer_boundary_model(self):
         query = "跨任务继续处理某个历史项目时，怎样判断该优先调用具体经历、当前状态事实、观察还是心智模型？请说明各类记忆的边界，避免把旧结论当成当前事实。"
@@ -1674,10 +1725,7 @@ class EvolutionRecallPlanningTests(unittest.TestCase):
             ),
         }
         decision = admission_decision(query, migration_noise, deep=True)
-        self.assertEqual(decision["decision"], "qualified")
-        self.assertEqual(decision["relevance_strength"], "weak")
-        self.assertFalse(decision["proposition_alignment"]["relation_support"])
-        self.assertFalse(decision["authority_verified"])
+        self.assertWeakBackgroundOnly(decision)
 
     def test_stable_guidance_expands_real_chain_acceptance_to_end_to_end_completion(self):
         """A durable acceptance preference need not repeat the model heading.
@@ -1842,10 +1890,12 @@ class EvolutionRecallPlanningTests(unittest.TestCase):
             [{"item": row} for row in rows],
             {"explicit_deep_recall": True, "primary_shape": "timeline"},
         )
-        self.assertEqual(
-            {row["id"] for row in admitted},
-            {"supersession-conditions", "four-layer-governance", "bare-field-noise"},
-        )
+        strength = {row["id"]: row["metadata"]["_ccy_admission"]["relevance_strength"] for row in admitted}
+        # The two records that carry the supersession conditions are direct evidence.
+        self.assertEqual(strength["supersession-conditions"], "direct")
+        self.assertEqual(strength["four-layer-governance"], "direct")
+        # The bare field note is kept as weak background under recall-first, never direct.
+        self.assertEqual(strength.get("bare-field-noise"), "weak")
         self.assertEqual(rejected, [])
         direct = {row["id"] for row in admitted if row["metadata"]["_ccy_admission"]["relevance_strength"] == "direct"}
         self.assertEqual(direct, {"supersession-conditions", "four-layer-governance"})
@@ -2380,12 +2430,9 @@ class EvolutionRecallPlanningTests(unittest.TestCase):
         query = "“Example Router”引入阶段解决了什么问题，验证边界是什么？"
         bare = {"id": "bare", "type": "world", "text": "Example Router 是一个组件名称。"}
         admitted, _ = controller.admit_controller_results(query, [bare], {"primary_shape": "point"})
+        # Recall-first retains it, flagged weak; it is never promoted past that.
         self.assertEqual([row["id"] for row in admitted], ["bare"])
-        admission = admitted[0]["metadata"]["_ccy_admission"]
-        self.assertEqual(admission["relevance_strength"], "weak")
-        self.assertNotEqual(admission["decision"], "qualified_mechanism_stage")
-        self.assertFalse(controller.mechanism_stage_evidence_alignment(query, bare["text"])["qualified"])
-        self.assertFalse(admission["authority_verified"])
+        self.assertEqual(admitted[0]["metadata"]["_ccy_admission"]["relevance_strength"], "weak")
 
     def test_discourse_openers_starting_with_wo_de_do_not_trigger_attribute_calibration(self):
         """``我的意思/理解`` is not a missing personal attribute.

@@ -9,18 +9,25 @@ import pytest
 from lib.context_summary import read_context_index
 
 
-def write_runtime_settings(state_root, overrides=None):
-    """Explicit recording authorization for isolated worker/recovery fixtures."""
-    settings = {'schema':'evolving-profile.runtime-settings.v1', 'generation':1,
-                'routing':{'ep_enabled':True}, 'modules':{'scenario_summary':{'record':True}}}
-    for key, value in (overrides or {}).items():
-        if key in {'routing', 'modules'} and isinstance(value, dict):
-            settings[key].update(value)
-        else:
-            settings[key] = value
+def write_runtime_settings(state_root, override=None):
+    """Write the minimal runtime-settings fixture shared by context tests."""
+    settings = {
+        'generation': 1,
+        'routing': {'ep_enabled': True},
+        'modules': {'scenario_summary': {'record': True}},
+    }
+
+    def merge(target, extra):
+        for key, value in (extra or {}).items():
+            if isinstance(value, dict) and isinstance(target.get(key), dict):
+                merge(target[key], value)
+            else:
+                target[key] = value
+
+    merge(settings, override or {})
     path = Path(state_root) / 'config/runtime-settings.json'
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(settings))
+    path.write_text(json.dumps(settings, ensure_ascii=False))
     return path
 
 
@@ -207,7 +214,9 @@ def test_new_navigation_row_reads_raw_fallback_and_exposes_background_progress(t
 
 def test_cli_discovery_needs_no_provider_and_queues_without_model_requests(tmp_path):
     sid = str(uuid.uuid4()); root = tmp_path / 'sessions'; rollout(root, sid)
-    write_runtime_settings(tmp_path/'state')
+    settings = tmp_path/'state/config/runtime-settings.json'
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({'routing':{'ep_enabled':True},'modules':{'scenario_summary':{'record':True}}}))
     result = subprocess.run([sys.executable, str(Path(__file__).with_name('context-incremental-worker.py')),
         '--state-root', str(tmp_path/'state'), '--session-root', str(root), '--discover-only'], text=True, capture_output=True)
     assert result.returncode == 0, result.stderr

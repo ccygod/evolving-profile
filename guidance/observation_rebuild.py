@@ -59,9 +59,26 @@ def observation_fingerprint(row: dict) -> str:
     return "sha256:" + sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def fetch_inputs(*, page_size: int = 1000, get_fn=None) -> list[dict]:
+def fetch_inputs(*, page_size: int = 1000, get_fn=None, attempts: int = 3, retry_delay: float = 2.0) -> list[dict]:
+    """Read every observation page.
+
+    The duplicates this guards against were caused by the API listing: its ORDER BY
+    had no unique tie-breaker, so rows retained together (identical timestamps)
+    could be paged twice or skipped (fixed in the API: ``..., id``; 6 of 25 full
+    scans were affected before, 0 of 40 after). A write landing between two offset
+    pages can still shift the later pages, so a duplicate is treated as a torn
+    read: re-read the whole listing a few times and fail only if it persists."""
     if not 1 <= page_size <= 1000: raise ValueError("invalid_observation_page_size")
-    reader = get_fn or get
+    if attempts < 1: raise ValueError("invalid_observation_attempts")
+    for attempt in range(attempts):
+        try:
+            return _fetch_inputs_once(page_size, get_fn or get)
+        except ValueError as error:
+            if str(error) != "duplicate_observation_ids" or attempt == attempts - 1: raise
+            time.sleep(retry_delay)
+
+
+def _fetch_inputs_once(page_size: int, reader) -> list[dict]:
     rows, offset = [], 0
     while True:
         path = "/v1/default/banks/" + urllib.parse.quote(BANK, safe="") + f"/memories/list?type=observation&limit={page_size}&offset={offset}"
@@ -144,6 +161,20 @@ def call_qwen(cfg: dict, batch: list[dict]) -> list[dict]:
     return normalized
 
 
+def _is_unconfirmed_assistant_observation(item: dict) -> bool:
+    """Fast local pre-filter for observations derived purely from unconfirmed assistant statements."""
+    text = str(item.get("text") or "").lstrip()
+    if text.startswith(("【助手·未确认", "Assistant statement (not user-confirmed)", "Source repetition")):
+        return True
+    records = [r for r in (item.get("source_records") or []) if r.get("state") == "valid"]
+    if records and all(
+        str(r.get("text") or "").lstrip().startswith(("Assistant statement (not user-confirmed)", "Source repetition"))
+        for r in records
+    ):
+        return True
+    return False
+
+
 def main(output_dir: str, observation_ids: set[str] | None = None):
     root = Path(output_dir); root.mkdir(parents=True, exist_ok=True)
     state_path, source_path = root / "state.json", root / "source-map.json"
@@ -163,7 +194,32 @@ def main(output_dir: str, observation_ids: set[str] | None = None):
                       "metadata": observation.get("metadata") or {}, "allowed_evidence_ids": allowed, "source_family_ids": families,
                       "source_records": [{key: row.get(key) for key in ("id", "text", "fact_type", "state", "document_id", "mentioned_at", "occurred_start", "occurred_end")} for row in records]})
     pending = [item for item in items if item["id"] not in state["results"]]
-    batches = [pending[index:index + 8] for index in range(0, len(pending), 8)]
+    llm_pending = []
+    prefiltered = 0
+    for item in pending:
+        if _is_unconfirmed_assistant_observation(item):
+            state["results"][item["id"]] = {
+                "id": item["id"],
+                "disposition": "reject_polluted",
+                "primary_category": None,
+                "related_categories": [],
+                "text": item["text"],
+                "applies_when": [],
+                "exceptions": [],
+                "effect_on_action": "",
+                "evidence_ids": [],
+                "reason": "local_prefilter_unconfirmed_assistant_statement",
+                "source_family_ids": item["source_family_ids"],
+                "source_record_count": len(item["source_records"]),
+            }
+            state["errors"].pop(item["id"], None)
+            prefiltered += 1
+        else:
+            llm_pending.append(item)
+    if prefiltered:
+        state.update(completed=len(state["results"]), failed=len(state["errors"]), total=len(items), updated_at=dt.datetime.now(dt.timezone.utc).isoformat())
+        atomic(state_path, state)
+    batches = [llm_pending[index:index + 8] for index in range(0, len(llm_pending), 8)]
     def process(batch):
         for attempt in range(3):
             try: return batch, call_qwen(cfg, batch), None

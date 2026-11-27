@@ -124,11 +124,12 @@ def run_once(config,root):
     def expand(s):
         for k,v in vars.items():s=str(s).replace('{'+k+'}',v)
         return s
-    _rows=batch.get('items') or locals().get('chosen') or []
-    _origin=','.join(sorted({str((r.get('metadata') or {}).get('origin_agent') or 'codex') for r in _rows})) or 'codex'
-    item={'content':batch['content'],'document_id':'codex-batch-'+batch['batch_id'],
-          'context':config.get('retainContext','codex'),
-          'metadata':{'source':'codex-hook-token-batch','origin_agent':_origin,'project':batch['project'],'session_ids':vars['session_id'],'retained_at':vars['timestamp'],'estimated_tokens':str(batch.get('estimated_tokens',0)),
+    _rows=[r for r in q._read()['items'] if r['id'] in batch['item_ids']]
+    _origin=','.join(sorted({str((r.get('metadata') or {}).get('origin_agent') or 'unknown') for r in _rows})) or 'unknown'
+    _host_slug=_origin if (_origin != 'unknown' and ',' not in _origin) else config.get('retainContext','codex')
+    item={'content':batch['content'],'document_id':f"{_host_slug}-batch-{batch['batch_id']}",
+          'context':_host_slug,
+          'metadata':{'source':f"{_host_slug}-hook-token-batch",'origin_agent':_origin,'project':batch['project'],'session_ids':vars['session_id'],'retained_at':vars['timestamp'],'estimated_tokens':str(batch.get('estimated_tokens',0)),
                       **{k:expand(v) for k,v in config.get('retainMetadata',{}).items()}, **submission_metadata(batch)},
           'tags':retain_tags([expand(t) for t in config.get('retainTags',[])],_origin),
           'observation_scopes':config.get('retainObservationScopes','shared')}

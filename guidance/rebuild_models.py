@@ -135,7 +135,7 @@ def compile_proposals(units: list[dict], proposals: list[dict], existing_models:
         action = str(proposal.get("lifecycle_action") or "hold")
         mechanism = " ".join(str(proposal.get("mechanism") or "").split())
         hold_reasons = []
-        if len(dimensions) < 2: hold_reasons.append("requires_two_dimensions")
+        if len(dimensions) < 1: hold_reasons.append("requires_dimension")
         if len(refs) < 2: hold_reasons.append("requires_two_references")
         if not mechanism: hold_reasons.append("mechanism_required")
         if not proposal.get("applies_when") or not proposal.get("exceptions") or not proposal.get("counterevidence"):

@@ -361,11 +361,13 @@ def main():
     if cursor > len(all_messages):
         cursor = 0
     new_messages = all_messages[cursor:]
+    max_asst_chars = config.get("retainMaxAssistantChars")
     transcript, message_count = prepare_retention_transcript(
         new_messages,
         config.get("retainRoles", ["user", "assistant"]),
         True,
         include_tool_calls=include_tool_calls,
+        max_assistant_chars=max_asst_chars,
     )
     # Only real transcript messages enter the knowledge queue. A journal is
     # already captured above, without borrowing the authority of nearby users.
@@ -381,10 +383,12 @@ def main():
         turn_transcript, _ = prepare_retention_transcript(
             all_messages[max(cursor, turn['start']):turn['end']],
             config.get('retainRoles', ['user', 'assistant']), True,
-            include_tool_calls=include_tool_calls)
+            include_tool_calls=include_tool_calls,
+            max_assistant_chars=max_asst_chars)
         structured_transcript, _ = prepare_retention_transcript(
             all_messages[max(cursor,turn['start']):turn['end']],
-            config.get('retainRoles',['user','assistant']),True,include_tool_calls=True)
+            config.get('retainRoles',['user','assistant']),True,include_tool_calls=True,
+            max_assistant_chars=max_asst_chars)
         captured = queue.capture(
             session_id=session_id, message_count=turn['end'], bank_id=bank_id,
             project=project, content=turn_transcript or '',

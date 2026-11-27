@@ -95,3 +95,13 @@ def test_untracked_task_workspace_is_excluded_but_tracked_task_files_are_rejecte
     subprocess.run(['git','add','-f','.superpowers/private-ledger.md'],cwd=root,check=True)
     result=scan(root)
     assert result.returncode!=0 and 'tracked_runtime_artifact' in result.stdout
+
+
+def test_words_containing_sk_dash_are_not_keys_but_quoted_keys_still_are(tmp_path):
+    root=setup(tmp_path)
+    (root/'notice.py').write_text("event='<task-notification><task-id>b1</task-id></task-notification>'\n")
+    assert scan(root).returncode==0
+    key='sk-'+'c'*32
+    (root/'config.py').write_text('key="'+key+'"')
+    result=scan(root)
+    assert result.returncode!=0 and 'config.py' in result.stdout+result.stderr and key not in result.stdout+result.stderr

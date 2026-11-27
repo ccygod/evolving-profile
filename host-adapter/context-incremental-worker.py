@@ -21,7 +21,8 @@ def recording_enabled(state_root):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-root', default=str(Path.home()/'.evolving-profile'))
-    parser.add_argument('--session-root', default=str(Path.home()/'.codex/sessions'))
+    parser.add_argument('--session-root', action='append', dest='session_roots',
+                        help='Session rollout root directory (repeatable; defaults to ~/.codex/sessions)')
     parser.add_argument('--provider-env', help='Existing EP provider profile; no Codex model substitution')
     parser.add_argument('--bank-id', default=os.environ.get('EVOLVING_PROFILE_BANK_ID'), help='Explicit owning Bank; no inferred assignment')
     parser.add_argument('--session-id', action='append', help='Limit discovery and processing to exact Session IDs for scoped catch-up')
@@ -41,6 +42,8 @@ def main():
     parser.add_argument('--interval', type=int, default=30)
     parser.add_argument('--debounce', type=int, default=30)
     args = parser.parse_args()
+    roots = args.session_roots or [str(Path.home()/'.codex/sessions')]
+    args.session_root = roots[0] if len(roots) == 1 else tuple(roots)
     if args.coverage_source and (not args.session_id or len(args.session_id)>32 or args.process or args.watch or args.reassess_source or args.status or args.discover_only):
         parser.error('coverage-source requires 1-32 exact sessions and cannot combine with other actions')
     if not 1 <= args.max_jobs <= 32 or not 1 <= args.interval <= 3600 or not 0 <= args.debounce <= 3600:
