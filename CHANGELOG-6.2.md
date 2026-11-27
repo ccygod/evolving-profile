@@ -1,4 +1,23 @@
-# Evolving Profile 6.2.1
+# Evolving Profile 6.2.2
+
+## 6.2.2 — 2026-11-27
+
+- **Link-map prompt list loads in well under a second.** The Console asked the status service
+  first with a 3 s timeout; the status service needed ~3.2 s, so every load waited 3 s, threw the
+  answer away and fell back to the Console's own list (~4 s per load in total). The Console's own
+  list is now the primary source — it also verifies Claude, Trae and other hosts against their
+  transcripts, where the status service's classifier verified only Codex turns (8 vs 267 natural
+  prompts on one install). The status service remains the fallback
+  (`EVOLVING_PROFILE_PROMPT_LIST_SOURCE=status` prefers it). Measured on one install: warm
+  4.3 s → 0.5–0.7 s, first request after a restart ~2 s, identical output.
+- Receipt directories are indexed once per process (binding ids and timestamps only, re-read when
+  a file changes) instead of parsing every receipt on every request; only the receipts that match
+  the returned rows are loaded in full.
+- The status service caches its bounded hook-receipt projection per file and projects new files
+  in one batched `jq` call instead of one process per file (~300 per request); its prompt list
+  dropped from ~3.1 s to ~1.5 s.
+- Real place, organisation and person names that earlier releases carried in test samples and
+  keyword lists are replaced with example names throughout the repository and its history.
 
 ## 6.2.1 — 2026-11-26
 

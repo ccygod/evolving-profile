@@ -234,18 +234,40 @@ def _hook_output_rows():
    'injected_ids:(.memory_effectiveness.injected_ids // [] | .[:100]),'
    'source_reads:(.memory_effectiveness.source_reads // [] | .[:20]),'
    'injection_receipt_state:.memory_effectiveness.injection_receipt_state}}')
+ # The projection is small and receipts are write-once, so keep it per file
+ # (keyed on mtime and size) and run jq only for files that are new or changed,
+ # in one batched process. Previously every request spawned one jq per file
+ # (~300 processes, ~1.2 s), which pushed the prompt list past the Console's
+ # 3 s upstream timeout and forced its fallback.
+ stamps={}
  for path in paths:
   try:
-   proc=subprocess.run(['jq','-c',jq_filter,str(path)],capture_output=True,text=True,timeout=2)
-   if proc.returncode!=0: continue
-   row=json.loads(proc.stdout)
-   raw=_norm_prompt(row.get('raw_user_prompt'))
-   if raw:
-    rows.append({'_raw_prompt':raw,'session_id':row.get('session_id'),'turn_id':row.get('turn_id'),'hook_invocation_id':row.get('hook_invocation_id'),
-      'memory_action':row.get('memory_action'),'history_decision':row.get('history_decision'),'history_decision_evidence':row.get('history_decision_evidence'),'candidate_count':row.get('candidate_count'),'memory_needs':row.get('memory_needs') or {},
-      'memory_effectiveness':row.get('memory_effectiveness') or {},'system_probe':row.get('system_probe'),'history_plan':row.get('history_plan')})
-  except Exception: pass
+   info=path.stat(); stamps[str(path)]=(info.st_mtime_ns,info.st_size)
+  except OSError: pass
+ for key in [k for k in _HOOK_ROW_CACHE if k not in stamps]: _HOOK_ROW_CACHE.pop(key,None)
+ stale=[p for p,stamp in stamps.items() if _HOOK_ROW_CACHE.get(p,(None,None))[0]!=stamp]
+ for start in range(0,len(stale),100):
+  chunk=stale[start:start+100]
+  for p in chunk: _HOOK_ROW_CACHE[p]=(stamps[p],None)
+  try:
+   proc=subprocess.run(['jq','-c','{__path:input_filename} + ('+jq_filter+')',*chunk],capture_output=True,text=True,timeout=10)
+  except Exception: continue
+  for line in proc.stdout.splitlines():
+   try: row=json.loads(line)
+   except ValueError: continue
+   p=row.pop('__path',None)
+   if p in stamps: _HOOK_ROW_CACHE[p]=(stamps[p],row)
+ for path in paths:
+  row=_HOOK_ROW_CACHE.get(str(path),(None,None))[1]
+  if not row: continue
+  raw=_norm_prompt(row.get('raw_user_prompt'))
+  if raw:
+   rows.append({'_raw_prompt':raw,'session_id':row.get('session_id'),'turn_id':row.get('turn_id'),'hook_invocation_id':row.get('hook_invocation_id'),
+     'memory_action':row.get('memory_action'),'history_decision':row.get('history_decision'),'history_decision_evidence':row.get('history_decision_evidence'),'candidate_count':row.get('candidate_count'),'memory_needs':row.get('memory_needs') or {},
+     'memory_effectiveness':row.get('memory_effectiveness') or {},'system_probe':row.get('system_probe'),'history_plan':row.get('history_plan')})
  return rows
+
+_HOOK_ROW_CACHE={}
 
 def _route_receipt_rows():
  root=STATE_ROOT/'audit/memory-route-receipts'; rows=[]

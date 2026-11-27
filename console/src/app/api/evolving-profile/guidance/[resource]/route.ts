@@ -1,6 +1,6 @@
 import { epStatePath, EP_STATE_ROOT, EP_API_ENV, EP_HOST_SESSIONS } from "@/lib/ep-state-paths";
 import { NextRequest, NextResponse } from "next/server";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 import { readReplayPrompts, enrichHostToolReceipt } from "@/lib/host-tool-replay.server";
@@ -13,14 +13,45 @@ const PROMPT_INGRESS_PATH = process.env.EVOLVING_PROFILE_PROMPT_INGRESS_PATH || 
 const MEMORY_ROUTE_RECEIPTS_PATH = process.env.EVOLVING_PROFILE_MEMORY_ROUTE_RECEIPTS_PATH || epStatePath("audit/memory-route-receipts");
 const GUIDANCE_ENTRY_RECEIPTS_PATH = process.env.EVOLVING_PROFILE_GUIDANCE_ENTRY_RECEIPTS_PATH || epStatePath("audit/guidance-entry-receipts");
 
-async function readJsonDirectory(directory: string) {
-  try {
-    const files = await readdir(directory);
-    const rows = await Promise.all(files.filter((file) => file.endsWith(".json")).map(async (file) => {
-      try { return JSON.parse(await readFile(path.join(directory, file), "utf8")); } catch { return null; }
+// Receipt directories hold thousands of write-once JSON files (one directory is
+// ~240 MB). The prompt list only needs, per page row, the newest receipt bound
+// to that prompt, so keep a per-process index of each file's binding ids and
+// timestamps, re-parse only files that are new or changed, and load the full
+// JSON just for the receipts that match the rows being returned.
+type ReceiptIndexEntry = { file: string; mtimeMs: number; size: number; at: string; updatedAt: string; binding: any };
+const receiptIndexes = new Map<string, Map<string, ReceiptIndexEntry>>();
+const bindingKeys = (value: any) => value && typeof value === "object"
+  ? { session_id: value.session_id, turn_id: value.turn_id, hook_invocation_id: value.hook_invocation_id, check_id: value.check_id }
+  : undefined;
+async function receiptIndex(directory: string): Promise<ReceiptIndexEntry[]> {
+  let files: string[];
+  try { files = (await readdir(directory)).filter((file) => file.endsWith(".json")); } catch { return []; }
+  const index = receiptIndexes.get(directory) ?? new Map<string, ReceiptIndexEntry>();
+  receiptIndexes.set(directory, index);
+  const present = new Set(files);
+  for (const name of [...index.keys()]) if (!present.has(name)) index.delete(name);
+  const pending = files;
+  for (let start = 0; start < pending.length; start += 64) {
+    await Promise.all(pending.slice(start, start + 64).map(async (name) => {
+      const file = path.join(directory, name);
+      try {
+        const info = await stat(file);
+        const known = index.get(name);
+        if (known && known.mtimeMs === info.mtimeMs && known.size === info.size) return;
+        const row = JSON.parse(await readFile(file, "utf8"));
+        if (!row || typeof row !== "object") { index.delete(name); return; }
+        index.set(name, { file, mtimeMs: info.mtimeMs, size: info.size, at: String(row.at ?? ""),
+          updatedAt: String(row.updated_at ?? row.at ?? ""),
+          binding: { ...bindingKeys(row), prompt_binding: bindingKeys(row.prompt_binding), task_state: bindingKeys(row.task_state) } });
+      } catch { index.delete(name); }
     }));
-    return rows.filter(Boolean) as any[];
-  } catch { return []; }
+  }
+  return [...index.values()];
+}
+async function latestBoundReceipt(entries: ReceiptIndexEntry[], row: any, order: "at" | "updatedAt") {
+  const match = entries.filter((entry) => samePromptBinding(row, entry.binding)).sort((a, b) => b[order].localeCompare(a[order]))[0];
+  if (!match) return null;
+  try { return JSON.parse(await readFile(match.file, "utf8")); } catch { return null; }
 }
 
 import { samePromptBinding } from "@/lib/prompt-binding";
@@ -62,10 +93,9 @@ async function localPromptList(request: NextRequest) {
       hostMatches(row) &&
       (!terms.length || terms.every(term => row.prompt_preview.includes(term))));
     const { rows, ...sourceProjection } = promptPopulationProjection(classified, promptSource);
-    const [routeReceipts, guidanceReceipts] = await Promise.all([readJsonDirectory(MEMORY_ROUTE_RECEIPTS_PATH), readJsonDirectory(GUIDANCE_ENTRY_RECEIPTS_PATH)]);
+    const [routeReceipts, guidanceReceipts] = await Promise.all([receiptIndex(MEMORY_ROUTE_RECEIPTS_PATH), receiptIndex(GUIDANCE_ENTRY_RECEIPTS_PATH)]);
     const items = await Promise.all(rows.slice(cursor, cursor + limit).map(async (row: any) => {
-      const route = routeReceipts.filter((receipt) => samePromptBinding(row, receipt)).sort((a, b) => String(b.updated_at ?? b.at ?? "").localeCompare(String(a.updated_at ?? a.at ?? "")))[0] ?? null;
-      const guidance = guidanceReceipts.filter((receipt) => samePromptBinding(row, receipt)).sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? "")))[0] ?? null;
+      const [route, guidance] = await Promise.all([latestBoundReceipt(routeReceipts, row, "updatedAt"), latestBoundReceipt(guidanceReceipts, row, "at")]);
       const item = {
         prompt_id: `${row.prompt_fingerprint}:${row.at}`,
         at: row.at,
@@ -98,6 +128,16 @@ export async function GET(
   const { resource } = await context.params;
   if (!RESOURCES.has(resource)) {
     return NextResponse.json({ error: "Unknown Evolving Profile guidance resource" }, { status: 404 });
+  }
+
+  // The local prompt list is the primary source: it verifies Claude, Trae and
+  // other hosts against their own transcripts (the status service's classifier
+  // only verifies Codex turns, e.g. 8 vs 267 natural prompts on one install) and
+  // answers in well under a second once warm. The status service stays the
+  // fallback; set EVOLVING_PROFILE_PROMPT_LIST_SOURCE=status to prefer it.
+  if (resource === "prompts" && process.env.EVOLVING_PROFILE_PROMPT_LIST_SOURCE !== "status") {
+    const local = await localPromptList(request);
+    if (local) return local;
   }
 
   const statusUrl = process.env.EVOLVING_PROFILE_STATUS_API_URL || "http://127.0.0.1:9998";
