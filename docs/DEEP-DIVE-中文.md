@@ -1,0 +1,553 @@
+# Evolving Profile
+
+[English](README.md)
+
+<div align="center">
+
+**把聊过的背景，变成懂你如何工作的记忆；把做过的任务，变成智能体可复用的经验。**
+
+从原始证据中提炼多维度个人记忆与智能体经验，让长期协作有据可循。
+
+**多维证据提炼 · 五维偏好建模 · 智能体经验复用 · 全链路可观察**
+
+[快速开始](#ep-quick-start) · [工作逻辑](#ep-how-it-works) · [让智能体安装](#ep-agent-setup) · [发布状态](docs/RELEASE-LEDGER.md)
+
+</div>
+
+你已经解释过这个项目，智能体也解决过相似问题。
+为什么换一个会话，还要重新交代背景，甚至看着它再次走同样的弯路？
+
+**Evolving Profile（EP）**从对话和执行证据中提炼**多维度个人记忆与可复用的智能体经验**。
+你的事实、关系、决策和工作偏好保留来源连接；智能体尝试过什么、在哪里失败、
+怎样修复、哪些策略有验证依据，则沿着独立的过程记忆路线组织。
+
+这些记忆服务于继续做事：智能体可以找到正确的项目，参考你偏好的协作方式，
+查找相关执行经验。你可以在网页检查提炼结果、手动修正偏好，追踪检索与送达的
+证据。需要时，再接入独立管理的外部资料。
+
+## 使用 EP 前后有什么不同
+
+Codex 和 Claude 本身已经在部分入口提供长期记忆。这里不是把原生 Agent
+画成“完全没有记忆”，而是对比“只用宿主原生记忆”和“同样的 Codex/Claude 接入 EP”。
+原生记忆可能过期、只在某个宿主范围内生效，难以说明来源和版本，也可能与后续修正
+并存；能被检索到，也不等于它真的进入了本轮上下文并影响了答案。
+
+下面是**虚构示例**，用于说明 EP 设计的连续性和证据链，不是准确率基准，
+也不承诺每次回答都会采用所有返回的记忆。
+
+| 只用 Codex/Claude 原生记忆 | Codex/Claude + EP |
+| --- | --- |
+| **用户：**“继续做河工大经管学院 AI 课程大纲。”<br>**智能体：**“请重新发送受众、上一版、偏好结构和上次结论。”<br><br>用户重复交代，旧遗漏可能再次发生。 | **用户：**“继续做河工大经管学院 AI 课程大纲。”<br>**智能体：**“我已定位到匹配的项目会话。我会保留领导视角和约定的先因果后落地结构；涉及名称、范围和结论的地方先回读原始材料，交付前再做回归检查。”<br><br>EP 提供有范围的导航和条件化偏好，智能体仍然核对原文。 |
+| **用户：**“记忆任务又失败了。”<br>**智能体：**“再重试一次。”<br><br>重复重试可能掩盖契约不匹配，也留下不了失败原因。 | **用户：**“记忆任务又失败了。”<br>**智能体：**“回执显示来源/版本契约不一致。我先比对当前指纹，再选择有界修复或 AI 报告；保留失败记录，最后核对作业终态再报告成功。”<br><br>EP 把失败、修复和验证分开保存。 |
+
+实际差异是把请求 → 相关上下文 → 原文核对 → 执行 → 验证这条链缩短。EP
+不会重训底层模型，也不会把未核验候选直接当成事实。
+
+![真实入口风格的 Codex、Claude Desktop 界面模拟：只用原生记忆与接入 EP](docs/assets/ep-before-after-ui-zh.svg)
+
+上图是按真实入口风格制作的产品 walkthrough，不是实际生产截图。它参考 Codex 桌面端、
+Claude Desktop 和 EP 网页控制台的界面边界，重点是把真实宿主的差异画出来，而不是假设有一个空白聊天窗口。
+
+### 为什么 Agent 自带长期记忆仍然会出问题
+
+| 问题 | 宿主原生记忆 | EP 叠加在宿主旁边 |
+| --- | --- | --- |
+| 这条记忆从哪里来？ | 可能只有记忆开关或个性化回答，没有来源回执。 | 关联到有范围的 Session、来源版本，并可回读原文。 |
+| 这条记忆还是最新的吗？ | 后续修正可能和旧记忆并存。 | 保留条件、替代证据，并在修复/发布前检查版本和指纹。 |
+| Codex 和 Claude 能共用吗？ | 各宿主可能有自己的记忆命名空间和生命周期。 | 记录 `origin_agent`、Bank 范围和跨 Agent lineage。 |
+| Agent 真的用到了吗？ | 能检索到不等于已经送进本轮上下文，更不等于答案采用。 | 分开记录返回、宿主送达和答案采用；没有证据就保持未知。 |
+| 失败后怎么办？ | 原生记忆通常不会展示失败尝试、修复队列或恢复回执。 | EP 保留失败，生成有界修复/AI 报告，保留原记录并核对终态。 |
+
+所以 EP 是围绕原生 Agent 记忆补上的证据与恢复层，不是假设 Codex/Claude 没有长期记忆，
+也不宣称 EP 能消除所有记忆错误。
+
+EP 的优势不是一个孤立的“记忆分数”，而是把用户记忆、智能体过程记忆和宿主接入
+放在同一条有证据的链上。原生长期记忆、Hindsight 后端、AgentMemory MCP 都可以
+单独发挥作用；真正的差异在于，用户在 Codex 和 Claude 之间跨项目工作时，能不能看见
+这条链的范围、来源、修复和恢复。
+
+## 一个更真实的跨宿主使用过程
+
+下面是更完整的**虚构 walkthrough**，不是基准，也不是说竞品永远不能实现其中某个动作。
+它展示的是“单独使用一个组件”和“使用 EP 作为协调证据层”的差异。
+
+### 1. 用户在 Claude Desktop 继续一个真实项目
+
+```text
+Claude Desktop
+用户：继续做经管学院 AI 课程大纲。
+
+只用原生记忆
+Claude：我记得一个 AI 课程大纲，但无法判断是某市职业大学项目，
+       还是某省工业大学项目。请重新贴出受众和上一版定稿。
+
+只用 Hindsight 后端
+Recall：返回 3 个相似片段。
+       片段没有说明当前 Session、后续修正，
+       也没有说明这是草稿还是已批准版本。
+
+只用 AgentMemory 过程库
+Process hint：“使用先因果后落地的结构。”
+             但这不能证明偏好来自哪个项目原文。
+
+接入 EP 的 Claude Desktop
+EP user_scenario_summary：匹配到 1 个项目，排除 2 个同名近邻候选。
+EP user_preference：保留领导视角；先给结果；再解释因果链。
+EP user_source_readback：已找到批准范围和最新修正。
+Claude：我已定位到正确的项目 Session。我会保留领导视角，
+       对名称和范围先回读原文，再给课程大纲和回归检查清单。
+```
+
+这里的价值不是“EP 多记住了几句话”，而是把项目身份、适用条件、后续修正和原文回读
+放在一起，同时排除只因为机构名称相同而相似的其他项目。
+
+### 2. 用户从 Claude Desktop 转到 Codex
+
+```text
+Codex 桌面端
+用户：把刚才的大纲转成领导汇报，保留相同决策。
+
+没有共享证据层
+Codex：我可以使用当前聊天，但不知道 Claude 对话的来源范围，
+       也不知道之前为什么选择这种结构。
+
+接入 EP
+EP origin_agent：claude-desktop → codex
+EP lineage：同一个 Bank、同一个项目键、同一任务的后续阶段
+EP 偏好包：先结果 · 先因果解释 · 交付前视觉验收
+EP 来源版本：approved-scope@r17
+Codex：我会沿用同一项目的决策，不把某市项目和其他近邻项目合并；
+       涉及金额、日期、机构名称和批准结论时，先回读原文再改写。
+```
+
+这正是 EP 和“宿主本地记忆开关”的差异：它把宿主之间的身份和版本边界带过来，
+而且用户能检查这次交接到底依据了什么。
+
+### 3. 失败不是被隐藏，而是被修复并验收
+
+```text
+EP 控制台 · 运行总览
+事件：心理模型刷新失败
+根因：来源/版本契约不一致
+原始操作：已保留并关联
+修复动作：有界 AI 诊断 + 来源指纹校验
+
+[预览修复]
+模型报告：失败来自旧的来源信封；不删除原记录；候选更新只影响当前模型。
+
+[应用修复]
+状态：applied → completed
+验证：来源指纹一致；队列终态已回读；旧错误写入 attempt_errors；
+      本地备份回执存在。
+
+只用原生记忆：可能只得到“memory unavailable”，或者静默重试。
+只用 Hindsight：可以检索到关于错误的记忆，但宿主队列、修复计划、备份
+               和最终作业状态仍是分开的事情。
+只用 AgentMemory：可以记住某个修复策略，但它不一定关联当前用户来源、
+                  当前 Bank 和实际终态回执。
+```
+
+EP 不靠改写历史来制造绿色状态，而是保留失败尝试，让用户看见失败原因、模型建议、
+实际应用内容和最终验证结果。
+
+### 这组能力为什么难以被单个记忆后端替代
+
+| 层 | 单独使用时通常能提供什么 | EP 在外层补上的东西 |
+| --- | --- | --- |
+| Codex/Claude 原生记忆 | 宿主级个性化和上下文延续 | 共享 Bank 范围、来源身份、跨宿主 lineage、送达和答案采用边界 |
+| Hindsight | 配置正确时提供较强的 retain/recall/reflect 记忆后端 | 五维偏好、情景导航、原文回读、宿主适配器和运行回执 |
+| AgentMemory | 智能体轨迹、策略和过程记忆候选 | 把过程经验连接到用户/项目证据、模型/工具条件、修复计划和再验证 |
+| 外部 RAG | 在操作者选择的资料上检索 | 把外部文档和个人历史、智能体经验分开，保留来源类别 |
+| EP 组合层 | — | 用户记忆 + 智能体经验 + 宿主生命周期 + 修复 + 备份恢复 + 可观察证据 |
+
+README 应该表达的就是这个差异：EP 难以被一个记忆后端替代，因为它把不同记忆平面
+和运行生命周期接起来，闭合了“召回 → 原文核对 → 执行 → 修复 → 恢复”的链路。
+这不是说 Hindsight、AgentMemory 或宿主原生记忆没有价值，而是 EP 给它们补上了范围
+和运行证据。
+
+![EP 6.1.0 统一架构总览：多宿主接入、语义写入门控、统一 Model Router (:12095)、跨平台零 Shell 调度器 (:12096)、双时态实体状态与可审计检索](docs/assets/ep6-architecture-zh.svg)
+
+## 先看实际工作流
+
+![EP 6.1.0 全链路工作流：串行主干、并行用户记忆（含红线偏好与双时态实体状态）、智能体过程记忆、外部 RAG（含双时态与信任重排）及写回治理](docs/assets/ep61-workflow-zh.svg)
+
+截图来自实际控制台中的既有历史审计记录，裁去了左侧私人 Prompt 列表；
+历史来源归属不作为自然用户样本基准。图中的分支代表可选路线，
+**不是每一轮都必须调用全部功能**。数字属于选中记录的可观察回执，不是召回准确率，
+也不能单独证明最终回答采用了其中内容。
+
+<details>
+<summary>不只看图，还可以检查每个节点的回执</summary>
+
+![真实中文回执详情：展示当前节点可观察到的调用证据](docs/assets/ep51-receipt-detail-20261017-zh.png)
+
+没有回执、已调用但返回空、候选被排除、宿主送达未知，是不同的状态。
+点击节点检查对应证据，比笼统地说“AI 忘了”更容易找到原因。
+
+</details>
+
+## 核心能力
+
+| 能力 | 为实际工作带来什么 |
+| --- | --- |
+| **有来源的个人上下文** | 组织事实、状态、经历、实体与关系，结合时间和原始证据核对过往决定。 |
+| **五维偏好** | 让沟通、学习、分析、协作和交付方式适配当前任务；检查条件、例外和跨维度心智模型参考。 |
+| **可重新评估的智能体经验** | 串联轨迹、过程观察、失败、修复、可复用策略候选、能力观测与迁移再验证。 |
+| **分层情景导航** | 先定位 Session 和任务阶段，再按需展开背景或回读原文。 |
+| **外部知识隔离协同** | 资料文件夹可以参与任务，但 PDF 不会因此冒充你的历史经历或个人偏好。 |
+| **记忆链路可观察** | 区分检索、筛选、返回、送达与原文回读，帮助定位问题发生在哪一步。 |
+| **模块化配置** | 按需要配置记忆模块、模型服务、检索模型、可选判断器和预算。 |
+
+这些能力提供的是结构化证据和可复用上下文，不代表所有旧记忆都正确，
+也不承诺每项任务都会自动提升效果。
+
+## 哪些较成熟，哪些还需验证
+
+**本版为 EP 6.2.2 正式版；不同平台的验证边界仍单独标注。**
+
+6.2 新增**存储治理**：检索从不使用的记忆不再占用向量索引，原始日志不再无限增长，所有节省都可以恢复（见[越用越省的存储](#ep-storage)）。
+- 低价值与重复记忆的**冷热分层**（`v6/memory_tiering.py`）、**半精度向量**（`halfvec`，迁移 `f3a4b5c6d7e8`）、与检索实际读取数量一致的时间关系上限，以及旧工具调用事件的**压缩归档与校验**（`v6/events_retention.py`）。
+- **MCP 适配器热更新**：每个请求处理前检查代码版本；失败按类型审计，参数错误返回 JSON-RPC `-32602`；新增不记录参数值的 Schema 偏差审计。
+- Hook 与 MCP 两条入口**使用同一偏好检索模式**；偏好 `scope` 结构与已生效版本由 SQLite 触发器强制约束。
+- 用户记忆与智能体记忆统一星座图风格，所有图谱视图支持**加载更多**。
+- 6.2.2：链路页 Prompt 列表加载降到 1 秒以内（改为以控制台本地按原生记录核验的列表为主），仓库及其历史中的真实地名、机构名、人名全部换成示例名。
+- 6.2.1：本仓库与实际运行的安装逐模块对齐，补齐数据驱动的 **Prompt 旅程**链路图、Worker 租约、Bank 选择、全量检索面板等约 140 个此前未发布的文件；新增 `scripts/release-parity.py`，发版时有遗漏会直接拦下。
+
+6.2 建立在 6.1 之上，6.1 在 v6 统一架构基础上完成了**跨平台自适应内核、数据本体治理与前后端全链路对齐**：
+- **统一控制面与零 Shell 调度**：本地单点 OpenAI 兼容 **Model Router**（`v6/model_router.py`，`:12095`，默认严格主备 `failover` + 熔断 + 遥测）与纯 Python 常驻事件驱动 **Scheduler Daemon**（`v6/daemon.py`，`:12096`，统一托管 13 项后台作业，零 `.zsh` 依赖，支持 macOS / Windows / Linux）。
+- **Postgres 18 & pgvector 0.8 自适应内核调优**（`v6/pg_autotune.py`）：按硬件内存与 CPU 自动计算 `shared_buffers`、`work_mem`、`maintenance_work_mem`、`effective_cache_size`、`max_wal_size`，开启 `jit = off`、`autovacuum_vacuum_scale_factor = 0.05`、`idle_in_transaction_session_timeout = 60s`、`pg_stat_statements` 慢查询剖析、全库 `ANALYZE`，并自动检测 `pgvector >= 0.8` 启用 `hnsw.iterative_scan = relaxed_order`。
+- **双时态可变状态与数据本体治理**：新增通用双时态 **Entity State** 状态账本（`v6/entity_state.py`，`ep_events.entity_state`，带 `valid_from`/`valid_to`/`superseded_by`）、IDF 加权 **实体图谱**（`v6/entity_graph.py`）、**双时态与信任重排器**（`v6/reranker.py`）、自动化 **本体与偏好治理引擎**（`v6/ontology_hygiene.py`：活跃认知模型去重、偏好 `enforcement` 红线分级与 `scope_level` 作用域隔离、未确认助手经历软降权、测试 Bank 与孤儿 HNSW 索引及单次实体自动清理）、**SQLite 与旧构建治理**（`v6/sqlite_hygiene.py`）以及 **黄金质量门禁**（`v6/eval_harness.py`）。
+- **Web 控制台可视化匹配**：多维度偏好星座图与详情面板同步展示红线禁令 / 作用域分级，记忆星座图自动淡化软降权历史噪声同时保留可追溯性，全链路拓扑图补齐「实体状态」与「双时态与信任重排」节点。
+
+EP 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发，见 [NOTICE.md](NOTICE.md)。完整变更见 [CHANGELOG-6.2.md](CHANGELOG-6.2.md) · [CHANGELOG-6.1.md](CHANGELOG-6.1.md) · [CHANGELOG-6.0.md](CHANGELOG-6.0.md)，架构说明见 [docs/ARCHITECTURE-v6.md](docs/ARCHITECTURE-v6.md)（历史 5.1 变更见 [CHANGELOG-5.1.md](CHANGELOG-5.1.md)）。
+
+产品版本以 [VERSION](VERSION) 为唯一权威，构建信息见 [发行清单](config/release-manifest.json)。当前 6.2.2 文档与代码位于 `main` 及 [`release/6.2.0` 分支](https://github.com/gtkj/evolving-profile/tree/release/6.2.0)（标签 [`v6.2.2`](https://github.com/gtkj/evolving-profile/releases/tag/v6.2.2)，个人镜像见 [`ccygod/evolving-profile`](https://github.com/ccygod/evolving-profile)）。
+
+| 能力 | 当前成熟度与证据 | 仍需验证 |
+| --- | --- | --- |
+| 用户/智能体记忆、五维偏好、双时态 `entity_state`、情景及原文导航、可观察链路 | 已在 macOS 上完成 **Codex、Claude Desktop、Claude Code CLI、Antigravity、Trae** 5 大宿主端到端联调与真实多宿主台账写入（`ep_events.work_ledger`） | 全历史准确性、普遍回答收益及所有模型和任务组合 |
+| 宿主接入管理页 | 已实现；本机正式页面的中英文、点击、滚动和响应式已检查 | 非 macOS 目标客户端的原生交互验收 |
+| 受治理 stdio、可选认证 HTTP | EP 侧协议/权限测试 + Codex / Claude Desktop & CLI / Antigravity / Trae 真实 MCP 读取与捕获；新宿主档案默认只读 | 远程 TLS 及每个工具延迟执行分支 |
+| Claude Desktop、Claude Code CLI、Antigravity、Trae | 均已接入统一事件总线、`work_ledger`、双时态 `entity_state` 与共享记忆库（macOS 实测运行） | Windows/Linux 全客户端版本的原生生命周期对等验收 |
+| Hermes、WorkBuddy、豆包工作 | 能力档案、识别、预览、指导和诊断已准备 | 原生任务及会话证据；不宣称与 Codex/Claude/Antigravity 同等验证 |
+| Windows 原生、WSL、远端 | 已提供零 Shell 纯 Python `v6/daemon.py` + `v6/pg_autotune.py` 与原生 `scripts/install.ps1` / `scripts/install.py`（`uv` 自动拉起 Python 3.11+，不依赖系统旧 Python，无需强制 WSL） | 干净 Windows 机器上的全流程端到端回归认证 |
+| 外部 RAG、JEV、本地模型 | 已有可选模块与配置 | 你自己的文件、密钥、模型、索引兼容和实际收益 |
+
+“发现安装”“配置存在”“EP 协议通过”“宿主接收”“回答采用”不是一回事。
+没有证据就保留未知，不补成零或成功。详见[本候选版边界与验收](docs/RELEASE-NOTES-5.1.4.md)。
+
+## 个性化，不止于记住“喜欢什么”
+
+EP 围绕**五个维度**提炼偏好，让个人上下文能够影响任务的理解、沟通、执行与验收。
+
+| 维度 | 可以提炼什么 | 假设性示例 |
+| --- | --- | --- |
+| **沟通与呈现** | 措辞、语气、结构与视觉呈现 | “汇报进度时先说结果，再给依据。” |
+| **学习与理解** | 解释顺序、例子与学习方法 | “先讲具体例子，再解释抽象机制。” |
+| **分析与决策** | 证据标准、替代方案与决策依据 | “比较取舍后，明确推荐哪一个。” |
+| **执行与协作** | 主动程度、任务范围、协作与检查点 | “约定范围内继续做，改变范围时再确认。” |
+| **质量与交付** | 验证方式、验收标准与交付要求 | “文档交付前先渲染，逐页检查。” |
+
+表中是示例，不是安装后预置的规则。提炼出的偏好可以保留范围、适用条件、例外、
+支持原话、审核状态和后续替代关系；网页支持手动修正正文与条件。
+**融合心智模型**把多个维度的已审阅偏好联系起来，为理解一个人的工作方式提供
+更完整的参考；它仍是可回溯、有条件的解释，不是固定的人格判断。
+
+完整记忆分类、生命周期与实现依据见[EP 能记住什么](docs/MEMORY-CAPABILITIES-中文.md)。
+
+## 三类记忆，各司其职
+
+![用户记忆、智能体过程经验与外部 RAG 分开管理，再汇入当前任务的上下文包](docs/assets/ep-memory-planes-zh.svg)
+
+**用户记忆**包含事实、经历、实体与关系、观察、条件化多维度偏好、心智模型参考和
+情景导航。偏好应保留条件与例外；项目局部要求不能悄悄变成永久全局规则。
+
+**智能体过程记忆**关注尝试了什么、哪里失败、如何修复、观测到什么验证，以及经验
+是否适用于当前任务。失败事件、修复模式、过程策略、能力观测和迁移再验证各有位置。
+它不是自动安装的 Skill，也不是强加给未来更强模型的永久命令。
+这里的适应来自经验存储、选择和再验证，不是重新训练底层模型权重。
+
+**外部 RAG**用于操作者选择的 PDF、Word、Markdown 等资料集合，支持词法/向量检索、
+倒数排名融合（RRF）、可选模型重排，以及索引兼容性与重建控制。
+它是可选的外部知识路线，不是 EP 内部记忆必须再走一遍的第二套索引。
+
+<a id="ep-how-it-works"></a>
+
+## 一次任务如何使用 EP
+
+```mermaid
+flowchart TB
+    Q[当前请求与已有上下文] --> D{还有值得补充的信息缺口吗}
+    D -->|没有| X[智能体利用当前上下文执行]
+    D -->|有| R[选择相关路线]
+    R --> U[用户偏好 / 用户召回 / 用户研究]
+    R --> A[智能体召回 / 研究 / 过程证据]
+    R --> E[外部 RAG：已启用且任务相关时]
+    U --> C[核对范围与来源]
+    A --> C
+    E --> C
+    C --> P[组装当前任务的上下文]
+    P --> X
+    X --> W[符合条件的增量写回与审计]
+```
+
+同一个任务可以同时需要用户背景与智能体经验，因此允许组合路线；
+用户明确限定来源时，以当前要求为准。
+
+### 先导航，必要时再深入
+
+情景摘要分为**紧凑、标准、完整三层**，用于定位会话、阶段、条件与后续纠正，
+并不替代精确原话。
+
+三层仍不够时，可以走有界的 Session/Project 原始历史读取路线。涉及人名、金额、
+版本、否定、冲突和正式交付内容时，再按可用来源定位回读原文。
+不同定位使用不同读取工具：本地 transcript 路径不等于 Bank 的 `read_source` ID。
+
+### 证据状态分开，记忆才更可控
+
+```text
+发现候选 ≠ 已返回 ≠ 已观测送达 ≠ 已读原文 ≠ 已确认答案采用
+```
+
+弱相关或未确认内容可以保留为查证线索，但不能自动升级成事实。
+相关度设置可以保留弱相关背景并排除无关内容；相关度本身不是正确性评分。
+
+## 适合哪些场景
+
+**假设性的项目接续：**方案从早期草稿调整为已确认范围。EP 可以帮助定位正确的
+Session、后续纠正和原话，再单独参考最终文档的呈现偏好。同一个机构名称，
+不足以把两个不同项目合并。
+
+**假设性的故障修复：**智能体此前处理过一次渲染失败。过程记忆可以保留尝试、失败、
+修复及验证，为新任务提供相关策略候选。模型或工具链变化后仍需核对适用性，
+不能把一次成功当成通用配方。
+
+- **跨会话继续项目：** 找到此前决定、约束与纠正，避免把同一机构的不同项目混为一谈。
+- **适配协作习惯：** 根据当前任务读取条件化偏好，而不是把所有偏好塞进每个回答。
+- **复用执行经验：** 检索过去的调试或制作经验，再核对前提是否仍然成立。
+- **结合外部资料工作：** 对照个人历史与外部文档，同时保留来源边界。
+- **排查记忆似乎失效：** 检查实际路线和回执，而不是仅凭回答猜测系统是否工作。
+
+## 功能配置与成本控制
+
+网页提供用户/智能体记忆模块、Provider/Fallback、Embedding/Rerank、外部 RAG、
+情景摘要、JEV、备份和审计等设置。记录、检索和上下文使用职责不同；
+关闭模块不等于删除已存数据。
+
+- 按需选择本地或在线检索模型；保存名称不等于模型可加载，实际路径/服务和索引签名需要验证。
+- 只为希望参与检索的资料集合启用外部 RAG。
+- **JEV 是可选判断辅助：** 可参与已配置的路由或证据审查环节，不替代召回器，也不写入事实。
+  关闭或不可用时，保持对应规则托底以及明确的未知/错误状态。
+- 高风险判断需要单独主动启用；它不覆盖宿主原有的权限与来源核验边界。
+- 后台提炼、在线向量服务和判断服务可能消耗 Provider Token；
+  本地模型也有内存和启动成本。通过模块开关、按需展开、分页和预算控制，而不是假定记忆免费。
+
+安装器不会开启实验性全历史模型试验。历史记录可能处于待审、保护或未知状态；
+系统不会为了让面板变绿而抹去这些状态。
+
+<a id="ep-storage"></a>
+
+## 越用越省的存储
+
+什么都留的记忆系统会一直变大，而增长的大部分是噪声：未经确认的助手陈述、碎片、多个宿主重复记下的同一件事、没人再看的工具调用日志。EP 6.2 把存储当作检索质量的一部分来管，规则只有一条：**只清理从来不被读取的内容，并且留好恢复的路。**
+
+| 机制 | 做什么 | 如何恢复 |
+| --- | --- | --- |
+| 冷热分层（`v6/memory_tiering.py`，每 10 分钟） | 低价值和重复记忆退出向量索引；正文、来源、关键词/全量检索和 `read_source` 照常可用。判定重复还要求数字和日期一致，"1,180 条"不会被并进"1,280 条" | `python -m v6.memory_tiering restore <unit_id>` 或 `--reason duplicate` |
+| 半精度向量（迁移 `f3a4b5c6d7e8`） | 以 `halfvec` 存储并建 HNSW 索引，体积约减半，排序不变 | `alembic downgrade`，或迁移前设 `EVOLVING_PROFILE_EMBEDDING_STORAGE=vector` |
+| 时间关系上限 10 条 | 只写图检索真正会读的关系 | — |
+| 事件日志保留（`v6/events_retention.py`，每天） | 闲置超过 30 天的会话，其工具调用记录压缩成一行存进数据库，校验通过后再删除；对话正文保留 | `python -m v6.events_retention restore <archive_id>` |
+| 工作区与轨迹清理 | 过期的研究快照在所有入口都会清理；召回轨迹只存记忆 ID 和分数 | — |
+
+在一套安装上实测（约 7.5 万条记忆，前后使用同一组问题）：记忆表从 885 MB 降到 525 MB，向量索引从 146 MB 降到 69 MB；召回 p50 从 0.221 秒降到 0.17–0.18 秒；指定记忆召回命中从 84/100 升到 87/100；前 10 条结果中的完全重复从 9.7% 降到 0.3%，低价值内容从 18.3% 降到 0。不同数据结果会不同，可以用 `python -m v6.storage_bench run before.json` 和 `... diff before.json after.json` 在自己的 Bank 上用固定问题对比。
+
+<a id="ep-quick-start"></a>
+
+## 快速开始
+
+### 第一次安装的验收顺序
+
+完整本机链路要分开验收：
+
+1. **构建：**运行安装器，确认它从 `VERSION` 报出 `EP 6.2.2`。
+2. **API：**启动 `8888`，要求 `curl --fail http://127.0.0.1:8888/health` 成功。
+3. **Controller：**启动 `12079`，要求 `curl --fail http://127.0.0.1:12079/v1/status` 成功。
+4. **Console：**启动 `9999`，打开所选语言页面，创建/选择自己的 Bank，并实际点击健康和配置页面。
+5. **宿主：**给实际宿主只注册一个 MCP/Hook，做一次真实读取和一次允许记录的自然任务。
+6. **恢复：**分别核对回执、队列终态、本地备份校验，以及（若启用）云端回读。
+
+网页变绿不代表后面几道验收都通过。完整命令、macOS 自动任务、云备份边界、
+升级和回退步骤见[部署说明](docs/DEPLOYMENT-中文.md)。
+
+**第一次安装看这里：**[后端与网页完整部署](docs/DEPLOYMENT-中文.md) →
+[选择具体宿主](docs/HOST-SETUP-中文.md) → [复制对应 Agent 提示词](docs/AGENT-SETUP-中文.md)。
+**安装本候选包：**先看[候选版安装入口](docs/CANDIDATE-SETUP.md)。
+**给 Agent 读：**接入不等于会使用，继续阅读[Agent 日常操作协议](docs/AGENT-USAGE-中文.md)。
+本工作树是 **6.2.2** 发行线，当前文档分支为 `release/6.2.0`（与 `main` 同步）；产品版本始终读 [VERSION](VERSION)，
+旧的 `v5.1.x` 标签仅作历史归档，不能根据旧 Tag 判断最新版。
+
+### 环境要求
+
+- Python **3.11+**、`uv`、Node.js **20.9+**、npm 和 Git。
+- 完整 API 需要 PostgreSQL/pgvector；内嵌数据库路线须明确安装 `embedded-db` extra。
+- 可用的聊天模型与向量模型路线；聊天 Coding Plan 不一定提供向量服务。
+- 本机实际验证平台为 macOS；Linux 需核对平台依赖，未认证 Windows 原生安装。
+
+### 1. 一键安装构建
+
+**跨平台推荐（macOS / Linux / Windows PowerShell 通用；`uv` 自动托管 Python 3.11+，默认自动注册开机自启，重启电脑后自动恢复后台采集与检索；无需折腾 WSL）：**
+
+```bash
+git clone https://github.com/gtkj/evolving-profile.git
+cd evolving-profile
+uv run --python 3.11 scripts/install.py --mode local
+```
+
+**Windows PowerShell 也可直接运行（自动注册登录静默自启，无黑框弹窗）：**
+
+```powershell
+.\scripts\install.ps1
+```
+
+如仅构建不注册开机自启，可加 `--no-autostart` / `-NoAutostart`；随时可用 `uv run --python 3.11 -m v6.autostart install|uninstall|status` 管理开机自启（macOS LaunchAgents / Windows 任务计划程序 / Linux `systemd --user`）。macOS / Linux / WSL 仍保留兼容脚本 `./scripts/install-ep51.sh --mode local --no-launch`。
+
+脚本执行预检与来源文本扫描，安装基础依赖，**先构建 SDK 再构建 Console**，
+并生成本地启动清单；只在 `.env` 不存在时创建模板。
+**它不会启动服务，也不会自动注册 MCP/Hook。**
+
+`--dry-run` 用于不写文件的预演；`--skip-deps` 只用于这个目录已经装好依赖时，
+首次安装不要使用。
+
+### 2. 配置自己的服务
+
+按 [API 配置说明](api/README.md) 填写本地 `.env`，准备数据库与向量服务。
+基础安装不包含内嵌 PostgreSQL 或本地 ML，按选定路线安装相应 extra。
+API、Controller 和宿主配置应使用同一个 Bank ID；只切换网页下拉菜单，
+不等于已配置宿主的记忆命名空间。
+
+发行包不包含作者的生产 Bank、私有对话、凭据或模型权重。
+安装也不会默认开启 JEV、云备份和外部 RAG。
+
+### 3. 启动 API 与网页
+
+在仓库根目录、分别打开两个终端：
+
+```bash
+uv run --project api --env-file .env evolving-profile-api --host 127.0.0.1 --port 8888 --workers 1
+```
+
+```bash
+node --env-file=.env console/bin/cli.js --hostname 127.0.0.1 --port 9999 --api-url http://127.0.0.1:8888
+```
+
+打开[本地控制台](http://127.0.0.1:9999)，创建自己的 Bank，验证健康接口、实际页面点击
+及所选模型路线。详见[完整安装、升级与回退](docs/LOCAL-SETUP.md)。
+
+接宿主工具还要启动 **QueryController**，最小合约、访问策略和完整命令见
+[部署第4步](docs/DEPLOYMENT-中文.md#4-拉起后端和网页)。复制路线使用 `personal-memory`；
+当前 stdio 适配器不会仅因 `EP_BANK_ID` 或网页选择器变化就改用其他 Bank。
+
+**API/Console 能启动，不等于宿主已完整接入。** Controller、Hook、Guidance 和后台
+Worker 有独立配置与就绪要求。API 的 HTTP MCP 握手不能证明宿主 `user_recall`、
+`agent_research` 或上下文送达。不要在没有访问控制的情况下公开本地端口。
+
+<a id="ep-agent-setup"></a>
+
+## 让智能体帮你安装
+
+先选实际入口。一句话可以说明目标，需要完整执行时连同下方链接中的长版提示词一起复制；
+智能体仍需终端/浏览器权限和你自己的凭据。
+
+| Agent 入口 | 一句话安装要求 |
+| --- | --- |
+| **Codex 桌面端 / CLI** | 使用我提供的 EP 候选包，阅读部署与 Agent 日常操作指南，拉起后端与网页，只注册一个 EP，并实际验证记忆查询与允许记录任务的自动捕获。 |
+| **Claude Code CLI** | 按 EP 部署及 Claude CLI 指南拉起本机后端与网页，用 `claude mcp add` 注册 stdio 工具并做真实读取，不把未经验证的自动记录说成完成。 |
+| **Claude Code 桌面端 — 本地 Code 页** | 按 EP 桌面 Code 指南安装，复用正确的 MCP 且不重复注册，拉起后端与网页，在这次桌面会话内验证实际工具。 |
+| **Claude Desktop — 普通 Chat/Cowork** | 按 EP 本地 MCP 指南连接已运行的后端；没有终端/浏览器工具就给出独立 CLI/Code 后端安装要求，不声称 Chat 已部署系统服务。 |
+| **Hermes** | 核对当前安装实际MCP/API能力，使用提供的候选包和日常协议，先验证显式读取，不把自动生命周期写成通过。 |
+| **WorkBuddy** | 先生成专用配置预览，客户端已安装且我授权后才注册，随后按Agent日常协议选工具。 |
+| **豆包工作** | 审阅实际插件配置，为当前任务启用并阅读日常协议；Skill不保证每轮自动调用。 |
+
+源码来源为 `https://github.com/gtkj/evolving-profile`（个人镜像 `https://github.com/ccygod/evolving-profile`）；使用
+`main` 或当前 `release/6.2.0` 分支（或对应命名核验归档），不能用旧远端分支替代。
+**[完整分宿主提示词（含 Hermes）直接复制](docs/AGENT-SETUP-中文.md)。**
+长版包括备份合并、绝对路径、健康检查、网页点击、工具/捕获验收、配置生效、可选项和停止回退。
+
+接入后，把[日常操作协议](docs/AGENT-USAGE-中文.md)交给智能体，明确不同任务怎么选工具、
+本轮绑定如何处理、何时回读原文、故障怎么降级，以及不同宿主没有Hook时的边界。
+[机器可读辅助协议](config/agent-usage.v1.json)只是参考，不授予操作权限。
+
+## 宿主兼容性
+
+**Claude Desktop 不是 Claude Code。** `Claude Desktop` 指普通 Chat/Cowork 入口；`Claude Code` 指 CLI 或独立的桌面 Code 工作区。两者的配置、生命周期钩子和证据边界不同。
+
+| 宿主 | 当前定位 | 不应直接推断 |
+| --- | --- | --- |
+| **Codex** | 已完成端到端 MCP/Hook、记忆路由、情景与回执实测验证 | 所有黑盒回答都提供了答案采用回执 |
+| **Claude Code CLI** | 已完成 stdio MCP + 自适应 Hook 桥 + 真实回合入库（`ep_events.work_ledger`）验证 | Windows 原生 CLI 验收 |
+| **Claude Desktop（Cowork／本地智能体会话）** | 已完成 Hook 插件 + 桥接、桌面对话入库（`origin_agent=claude-desktop`）、情景摘要与健康检查端到端验证 | Windows/Linux 或其他 Desktop 版本 |
+| **Antigravity** | 已完成受治理 MCP 接入 + 原生会话适配器（`events/adapters/antigravity.py`）+ `work_ledger` 真实回合入库验证 | Windows 原生路径回归 |
+| **Trae** | 已完成原生会话适配器 + `work_ledger` 真实回合入库验证 | 自动 Hook 注入 |
+| **Hermes** | 可复用共享记忆服务及兼容的 MCP/API 契约 | 能力探针、回执与安装流程已经完全相同 |
+
+### Claude Desktop 与 Claude CLI（5.1.3 新增）
+
+同一个 EP Bank 现在可以被 **Codex、Claude Desktop、Claude CLI 同时写入和读取**，接入层会自己判断是谁在调用。
+完整说明：**[docs/host-integrations/CLAUDE-DESKTOP-CLI-中文.md](docs/host-integrations/CLAUDE-DESKTOP-CLI-中文.md)**（[English](docs/host-integrations/CLAUDE-DESKTOP-CLI.md)）。
+
+- **按宿主自适应的桥接脚本**（`claude-code/hook_bridge_desktop.py`）：SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、PreCompact、Stop 共用一个入口。
+  自动识别 Claude Desktop／Claude CLI／通用 Claude Code（也可用环境变量 `EP_HOST` 指定），给每条捕获记录打上 `origin_agent`，并且绝不阻塞 Claude（始终退出 0）。
+- **只保留人能看到的对话。** 工具结果、思考、图片、子链路和系统提醒都会丢弃，修掉了旧行为里“文件转储被当成*你*说过的话”的问题。
+- **桌面对话进入情景摘要**：经过静置期后，把 Codex 格式的 rollout 写入 EP 自己的 `claude-code/rollouts/`（绝不写 `~/.codex`），避免后台摘要器处理到一半被打断。
+- **事实提炼的引文修复**：对“几乎逐字”的 `source_quote` 做确定性、失败即拒绝的修复，减少批次被隔离，同时保留“必须是所述作者原消息精确子串”的保证。关闭开关 `EVOLVING_PROFILE_API_QUOTE_REPAIR=0`。
+- **一条命令安装，一条命令检查**：`zsh claude-code/install.sh [--desktop-plugin]`（支持 dry-run、备份、卸载）和 `python3 claude-code/compat/ep_desktop_health.py`（只读，对链路每一环给出 OK/WARN/FAIL，包括读写嵌入模型是否一致）。
+- 不动 Codex：`~/.codex/*` 与 `codex.json` 既不读也不写，已有 Codex 数据仍是 `origin_agent=codex`。
+
+**证据与边界，直说：** 在一台 macOS、Claude Desktop 3P 上开发并运行。CLI 这一路是用模拟宿主标记经真实桥接脚本验证的，没有在真实 CLI 会话里跑过。
+钩子有活动只证明上下文送达，不证明回答用到了它。Desktop 需要一次 `sudo` 写系统插件目录。细节和全部已知边界见该指南和 [RELEASE-NOTES-5.1.3](docs/RELEASE-NOTES-5.1.3.md)。
+
+新增[宿主准备档案与管理工具](docs/host-integrations/README-中文.md)，包含WorkBuddy、
+豆包工作和通用MCP。档案和管理能力已经实现，不只是未来计划；目标客户端真实生命周期
+仍待验收。见[自动生成的能力矩阵](docs/host-integrations/MATRIX-中文.md)，其文档支持项
+不是原生实测得分，不宣称与Codex同等验证。
+
+网页的模块、相关度、Provider/fallback、模型与索引、RAG/JEV 和备份建议见
+[配置怎么调](docs/DEPLOYMENT-中文.md#5-网页配置怎么调)。
+**网页保存的 Provider profile 和手动 API 的 `.env` 不自动相等，必须核对后端实际读取的配置。**
+
+## 可靠性、隐私与边界
+
+- **只为单用户本机设计。**EP 面向一个人在自己电脑上使用：服务只监听 `127.0.0.1`，本机维护任务免密连接数据库，后台作业使用数据库超级用户。它没有针对多人共用一台机器或暴露到网络的场景做加固，请不要这样部署。
+- 候选、情景摘要和过程模式不是已核实的外部事实；助手声称完成仍保留对应证据等级。
+- 工具调用或正文返回不能单独证明最终回答采用。
+- 网页提供英文、中文等语言切换；后台诊断和用户原文并不保证全部自动翻译。
+- 来源文本扫描不等于二进制图片审计或依赖风险认证。
+- 全部历史的语义准确率和最终回答收益未取得全局认证。
+- 启动时使用文档中的`--hostname 127.0.0.1`；遗留裸CLI仍默认全接口，
+  本候选不静默改变该行为，也不授权公开服务。
+
+产品版本读取 [`VERSION`](VERSION)。实际发布状态、测试、依赖风险和已知限制
+见 [v6 架构说明](docs/ARCHITECTURE-v6.md)、[v6 更新日志](CHANGELOG-6.0.md) 与 [发布记录](docs/RELEASE-LEDGER.md)，
+不在多个固定徽章中重复维护“最新版”。
+依赖的生产分类审计、完整工作区审计和保留的 RC 风险分别见[依赖风险说明](docs/DEPENDENCY-RISKS.md)。
+
+## 作者、来源与文档
+
+EP 发行作者/维护者：**CCY**。[主仓库](https://github.com/gtkj/evolving-profile)
+与[个人镜像仓库](https://github.com/ccygod/evolving-profile)是同一条发行来源线，
+不是两套不相干的实现。保留 [NOTICE](NOTICE.md) 与相应上游许可；
+仓库拥有者、Git 提交身份和上游致谢分别记录。
+
+- [English README](README.md)
+- [本地安装与回退](docs/LOCAL-SETUP.md) · [API 配置](api/README.md)
+- [完整部署](docs/DEPLOYMENT-中文.md) · [分宿主接入](docs/HOST-SETUP-中文.md) · [Agent 安装话](docs/AGENT-SETUP-中文.md)
+- [Agent 日常操作](docs/AGENT-USAGE-中文.md) · [候选包安装](docs/CANDIDATE-SETUP.md)
+- [6.2 更新日志](CHANGELOG-6.2.md) · [6.1 更新日志](CHANGELOG-6.1.md) · [6.0 更新日志](CHANGELOG-6.0.md) · [v6 架构说明](docs/ARCHITECTURE-v6.md) · [历史 5.1 更新日志](CHANGELOG-5.1.md)
+- [唯一真相源](config/source-of-truth.json) · [安全策略](SECURITY.md)
+
+## 基于 Hindsight 开发
+
+**Evolving Profile 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 开发。**
+Hindsight 提供上游记忆基础；EP 在此基础上构建用户与智能体记忆组织、条件化偏好、
+宿主集成和可观察控制层。感谢 Hindsight 项目及其贡献者的工作。
+使用和再分发相关代码时，请保留 [NOTICE](NOTICE.md) 以及适用的上游许可证与版权声明。

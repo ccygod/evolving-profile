@@ -1,0 +1,7 @@
+# Keep GitHub Linguist classification focused on core source code (Python + TypeScript)
+docs/** linguist-documentation
+*.md linguist-documentation
+*.svg linguist-documentation
+console/src/messages/*.json linguist-documentation
+package-lock.json linguist-generated
+api/uv.lock linguist-generated
