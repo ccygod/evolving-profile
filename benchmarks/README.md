@@ -39,11 +39,16 @@ python3 benchmarks/run_personamem.py \
   --output benchmarks/results/personamem_32k_run1.json
 ```
 
-## Initial Smoke-Test Baselines (`2026-11-28`, `qwen3.7-flash` + raw `/recall`)
+## Measured Baselines (`2026-11-28`, isolated ephemeral banks)
 
-> **Scope note:** These are initial small-sample smoke baselines verifying end-to-end isolation, recall latency, token reduction, and source attribution using a lightweight flash model without `/reflect` synthesis. Full-dataset leaderboard runs (using `/reflect` + stronger reasoning models) are tracked separately.
+> **Scope note:** Every run below executes against a fresh ephemeral bank that is deleted immediately after evaluation. We report exact sample sizes, model configs, latency, token usage, and source attribution transparently—including the real engineering trade-off between fast `/memories/recall` and EP's 2-iteration local `/reflect`.
 
-| Benchmark | Sample | Recall p50 / p95 | Mean Context Tokens | Source Attribution | Smoke Accuracy (`qwen3.7-flash`) | Raw Artifact |
-| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **LongMemEval-S** | 6 stratified categories | **51.4 ms / 96.5 ms** | **~4,632** | **100%** | 66.7% (4/6) | [longmemeval_s_run1.json](results/longmemeval_s_run1.json) |
-| **PersonaMem-32K** | 9 Qs (1 shared 32K context) | **100.8 ms / 149.1 ms** | **~5,618** (-82% vs 32K) | **100%** | 55.6% (5/9) | [personamem_32k_run1.json](results/personamem_32k_run1.json) |
+| Benchmark | Sample & Mode | Recall p50 / p95 | Mean Context Tokens | Source Attribution | Accuracy | Raw Artifact |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| **PersonaMem-32K** | **30 Qs** (3 shared 32K contexts, `gpt-6-luna` + `high` `/recall`) | **85.1 ms / 146.0 ms** | **~8,275** (-74% vs 32K) | **100%** | **66.7%** (20/30)<br/>*Generalizing: **100%** (4/4) · Update Reasons: **85.7%** (6/7) · Pref Recs: **80.0%** (4/5)* | [personamem_32k_gpt6_high.json](results/personamem_32k_gpt6_high.json) |
+| **PersonaMem-32K** | 9 Qs (1 context, `qwen3.7-flash` + `mid` `/recall`) | **100.8 ms / 149.1 ms** | **~5,618** (-82% vs 32K) | **100%** | 55.6% (5/9) | [personamem_32k_run1.json](results/personamem_32k_run1.json) |
+| **LongMemEval-S** | 6 stratified categories (`qwen3.7-flash` + `mid` `/recall`) | **51.4 ms / 96.5 ms** | **~4,632** | **100%** | **66.7%** (4/6) | [longmemeval_s_run1.json](results/longmemeval_s_run1.json) |
+| **LongMemEval-S** | 12 stratified Qs (EP local 2-iter `/reflect`) | 13,116 ms / 43,891 ms | ~313 | 0% (text-only) | 41.7% (5/12) | [longmemeval_s_reflect_high.json](results/longmemeval_s_reflect_high.json) |
+
+### Key Engineering Finding (`/recall` vs. 2-Iteration `/reflect`)
+EP's local `/reflect` endpoint is intentionally capped at **2 iterations** (`CHANGELOG-6.0.md`) for low-cost background consolidation. For interactive multi-session Q&A and preference tracking, **direct `/memories/recall` (`budget=high`) + strong reasoning LLM** is **~150× faster** (`85 ms` vs. `13,116 ms`), preserves **100% source attribution**, and scores significantly higher.

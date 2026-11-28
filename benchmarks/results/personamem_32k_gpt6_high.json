@@ -1,0 +1,415 @@
+{
+  "benchmark": "PersonaMem-32K",
+  "at": "2026-11-28T09:57:38Z",
+  "config": {
+    "model": "gpt-6-luna",
+    "budget": "high",
+    "max_tokens": 6000,
+    "contexts": 3,
+    "evaluated": 30
+  },
+  "overall": {
+    "evaluated": 30,
+    "correct": 20,
+    "accuracy": 0.6667,
+    "recall_p50_ms": 85.1,
+    "recall_p95_ms": 146.0,
+    "mean_context_tokens": 8275.4,
+    "mean_source_attribution": 1.0,
+    "elapsed_sec": 1204.1
+  },
+  "by_category": {
+    "recall_user_shared_facts": {
+      "correct": 2,
+      "total": 5,
+      "accuracy": 0.4
+    },
+    "provide_preference_aligned_recommendations": {
+      "correct": 4,
+      "total": 5,
+      "accuracy": 0.8
+    },
+    "suggest_new_ideas": {
+      "correct": 2,
+      "total": 6,
+      "accuracy": 0.3333
+    },
+    "recalling_the_reasons_behind_previous_updates": {
+      "correct": 6,
+      "total": 7,
+      "accuracy": 0.8571
+    },
+    "track_full_preference_evolution": {
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6667
+    },
+    "generalizing_to_new_scenarios": {
+      "correct": 4,
+      "total": 4,
+      "accuracy": 1.0
+    }
+  },
+  "results": [
+    {
+      "question_id": "acd74206-37dc-4756-94a8-b99a395d9a21",
+      "question_type": "recall_user_shared_facts",
+      "topic": "musicRecommendation",
+      "recall_ms": 76.1,
+      "recalled_count": 8,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8153,
+      "pred": "(b)",
+      "gold": "(c)",
+      "correct": false
+    },
+    {
+      "question_id": "f546a74f-54de-40d0-9d88-8b0e30467d7b",
+      "question_type": "provide_preference_aligned_recommendations",
+      "topic": "musicRecommendation",
+      "recall_ms": 99.3,
+      "recalled_count": 8,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8363,
+      "pred": "(d)",
+      "gold": "(d)",
+      "correct": true
+    },
+    {
+      "question_id": "b3588797-acdf-40d3-bcc5-951f81896f95",
+      "question_type": "suggest_new_ideas",
+      "topic": "musicRecommendation",
+      "recall_ms": 82.7,
+      "recalled_count": 6,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8409,
+      "pred": "(b)",
+      "gold": "(a)",
+      "correct": false
+    },
+    {
+      "question_id": "5370f186-0028-41f4-b436-c48575899fca",
+      "question_type": "suggest_new_ideas",
+      "topic": "musicRecommendation",
+      "recall_ms": 60.0,
+      "recalled_count": 8,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8404,
+      "pred": "(b)",
+      "gold": "(b)",
+      "correct": true
+    },
+    {
+      "question_id": "a40d5f67-8ec6-480b-a901-9709eecee9b9",
+      "question_type": "recalling_the_reasons_behind_previous_updates",
+      "topic": "musicRecommendation",
+      "recall_ms": 94.5,
+      "recalled_count": 11,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8289,
+      "pred": "(d)",
+      "gold": "(d)",
+      "correct": true
+    },
+    {
+      "question_id": "6142fba4-a233-405a-a4fe-a5b2e27374a7",
+      "question_type": "recalling_the_reasons_behind_previous_updates",
+      "topic": "musicRecommendation",
+      "recall_ms": 102.7,
+      "recalled_count": 7,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8380,
+      "pred": "(c)",
+      "gold": "(c)",
+      "correct": true
+    },
+    {
+      "question_id": "2cef53ac-c165-41b5-a31f-c3064106471f",
+      "question_type": "track_full_preference_evolution",
+      "topic": "musicRecommendation",
+      "recall_ms": 147.3,
+      "recalled_count": 7,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8432,
+      "pred": "(a)",
+      "gold": "(a)",
+      "correct": true
+    },
+    {
+      "question_id": "4afc48ca-e6a7-4467-abd2-911915199315",
+      "question_type": "track_full_preference_evolution",
+      "topic": "musicRecommendation",
+      "recall_ms": 92.9,
+      "recalled_count": 7,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8380,
+      "pred": "(d)",
+      "gold": "(a)",
+      "correct": false
+    },
+    {
+      "question_id": "defecce2-ff39-438e-ae41-90f3bcf9cb48",
+      "question_type": "track_full_preference_evolution",
+      "topic": "musicRecommendation",
+      "recall_ms": 151.9,
+      "recalled_count": 10,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8202,
+      "pred": "(b)",
+      "gold": "(b)",
+      "correct": true
+    },
+    {
+      "question_id": "fd81b480-5723-43fe-9fb1-d3efa0df8e49",
+      "question_type": "recall_user_shared_facts",
+      "topic": "musicRecommendation",
+      "recall_ms": 44.7,
+      "recalled_count": 8,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8144,
+      "pred": "(a)",
+      "gold": "(b)",
+      "correct": false
+    },
+    {
+      "question_id": "60023d63-4f11-47dc-8cef-82e3ca665a68",
+      "question_type": "provide_preference_aligned_recommendations",
+      "topic": "musicRecommendation",
+      "recall_ms": 106.4,
+      "recalled_count": 9,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8217,
+      "pred": "(a)",
+      "gold": "(a)",
+      "correct": true
+    },
+    {
+      "question_id": "c8a763a5-a7ae-4047-b1cf-f17204fd1f7d",
+      "question_type": "suggest_new_ideas",
+      "topic": "musicRecommendation",
+      "recall_ms": 76.9,
+      "recalled_count": 7,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8353,
+      "pred": "(b)",
+      "gold": "(b)",
+      "correct": true
+    },
+    {
+      "question_id": "ce9c7c39-c600-4971-9a7d-51a46e6c915c",
+      "question_type": "suggest_new_ideas",
+      "topic": "musicRecommendation",
+      "recall_ms": 76.4,
+      "recalled_count": 6,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8394,
+      "pred": "(c)",
+      "gold": "(b)",
+      "correct": false
+    },
+    {
+      "question_id": "217481b7-ad97-45d8-988f-abb3f9cf9b34",
+      "question_type": "recalling_the_reasons_behind_previous_updates",
+      "topic": "musicRecommendation",
+      "recall_ms": 73.8,
+      "recalled_count": 11,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8351,
+      "pred": "(d)",
+      "gold": "(c)",
+      "correct": false
+    },
+    {
+      "question_id": "b4812983-2c33-48ae-8955-1a19f78f7f54",
+      "question_type": "recall_user_shared_facts",
+      "topic": "musicRecommendation",
+      "recall_ms": 76.5,
+      "recalled_count": 9,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8172,
+      "pred": "(b)",
+      "gold": "(b)",
+      "correct": true
+    },
+    {
+      "question_id": "344ea859-e70d-48d2-8a97-7b68a104c6ae",
+      "question_type": "provide_preference_aligned_recommendations",
+      "topic": "musicRecommendation",
+      "recall_ms": 85.5,
+      "recalled_count": 9,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8267,
+      "pred": "(a)",
+      "gold": "(a)",
+      "correct": true
+    },
+    {
+      "question_id": "c6d22f3d-282f-4e11-b9fd-39e2a687ef18",
+      "question_type": "suggest_new_ideas",
+      "topic": "musicRecommendation",
+      "recall_ms": 108.8,
+      "recalled_count": 8,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8286,
+      "pred": "(d)",
+      "gold": "(a)",
+      "correct": false
+    },
+    {
+      "question_id": "c2d3daad-6d3b-4852-8830-39f830f6cd01",
+      "question_type": "recall_user_shared_facts",
+      "topic": "bookRecommendation",
+      "recall_ms": 48.3,
+      "recalled_count": 9,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8283,
+      "pred": "(b)",
+      "gold": "(b)",
+      "correct": true
+    },
+    {
+      "question_id": "96589b76-f0fa-4214-a110-c6f13ef15e83",
+      "question_type": "suggest_new_ideas",
+      "topic": "bookRecommendation",
+      "recall_ms": 72.7,
+      "recalled_count": 8,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8323,
+      "pred": "(c)",
+      "gold": "(b)",
+      "correct": false
+    },
+    {
+      "question_id": "2b3ce0bd-d0c2-48e3-8cd8-564905e9fe64",
+      "question_type": "provide_preference_aligned_recommendations",
+      "topic": "bookRecommendation",
+      "recall_ms": 67.6,
+      "recalled_count": 9,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8169,
+      "pred": "(c)",
+      "gold": "(c)",
+      "correct": true
+    },
+    {
+      "question_id": "b449e614-d27f-4df4-9fb2-b4726a3423d8",
+      "question_type": "generalizing_to_new_scenarios",
+      "topic": "bookRecommendation",
+      "recall_ms": 75.4,
+      "recalled_count": 10,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8176,
+      "pred": "(b)",
+      "gold": "(b)",
+      "correct": true
+    },
+    {
+      "question_id": "3952f3c2-d810-4fd9-a461-8753406142a3",
+      "question_type": "recalling_the_reasons_behind_previous_updates",
+      "topic": "bookRecommendation",
+      "recall_ms": 71.1,
+      "recalled_count": 10,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8176,
+      "pred": "(a)",
+      "gold": "(a)",
+      "correct": true
+    },
+    {
+      "question_id": "d71b360e-da59-480b-823e-a83e8c320b9c",
+      "question_type": "generalizing_to_new_scenarios",
+      "topic": "bookRecommendation",
+      "recall_ms": 85.5,
+      "recalled_count": 9,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8140,
+      "pred": "(c)",
+      "gold": "(c)",
+      "correct": true
+    },
+    {
+      "question_id": "7957ef21-86bb-4641-8a06-4ee2272f1c32",
+      "question_type": "recalling_the_reasons_behind_previous_updates",
+      "topic": "bookRecommendation",
+      "recall_ms": 83.9,
+      "recalled_count": 9,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8140,
+      "pred": "(d)",
+      "gold": "(d)",
+      "correct": true
+    },
+    {
+      "question_id": "7a4ed201-4f7e-4d9c-a3f3-c5a2b8d424b3",
+      "question_type": "recall_user_shared_facts",
+      "topic": "bookRecommendation",
+      "recall_ms": 90.0,
+      "recalled_count": 10,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8266,
+      "pred": "(b)",
+      "gold": "(c)",
+      "correct": false
+    },
+    {
+      "question_id": "afd724f4-8174-48d7-b9cd-34421c581550",
+      "question_type": "provide_preference_aligned_recommendations",
+      "topic": "bookRecommendation",
+      "recall_ms": 108.0,
+      "recalled_count": 8,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8313,
+      "pred": "(a)",
+      "gold": "(b)",
+      "correct": false
+    },
+    {
+      "question_id": "32b03409-0710-4afd-89c1-9af72c339b4c",
+      "question_type": "generalizing_to_new_scenarios",
+      "topic": "bookRecommendation",
+      "recall_ms": 107.4,
+      "recalled_count": 11,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8155,
+      "pred": "(d)",
+      "gold": "(d)",
+      "correct": true
+    },
+    {
+      "question_id": "346a304a-4371-46ac-a8f7-021f25812b52",
+      "question_type": "generalizing_to_new_scenarios",
+      "topic": "bookRecommendation",
+      "recall_ms": 106.3,
+      "recalled_count": 10,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8153,
+      "pred": "(c)",
+      "gold": "(c)",
+      "correct": true
+    },
+    {
+      "question_id": "848b2923-33da-4ebc-86b5-e70374311fd2",
+      "question_type": "recalling_the_reasons_behind_previous_updates",
+      "topic": "bookRecommendation",
+      "recall_ms": 84.7,
+      "recalled_count": 10,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8427,
+      "pred": "(c)",
+      "gold": "(c)",
+      "correct": true
+    },
+    {
+      "question_id": "221c8369-8ac4-447e-a13c-6088536f9abf",
+      "question_type": "recalling_the_reasons_behind_previous_updates",
+      "topic": "bookRecommendation",
+      "recall_ms": 144.5,
+      "recalled_count": 11,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 8344,
+      "pred": "(d)",
+      "gold": "(d)",
+      "correct": true
+    }
+  ]
+}

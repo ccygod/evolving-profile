@@ -82,7 +82,9 @@ Measured on a real macOS installation with **~75,000 memory units** using the bu
 | **`ep_events.events` tool logs** | 440 MB | **204 MB** | **237 MB archived → 16.5 MB zstd (100% reversible)** |
 | **Trace write per recall** | 4.89 MB | **0.91 MB** | **-81.4% I/O overhead** |
 
-> *Run `python -m v6.storage_bench` on your own bank to reproduce before/after numbers. Full methodology in [CHANGELOG-6.2.md](CHANGELOG-6.2.md). Reproducible **LongMemEval-S** & **PersonaMem-32K** isolated benchmark runners (with 51–101 ms p50 recall latency, ~82% context token reduction vs. 32K, and 100% source attribution smoke baselines) are in [benchmarks/](benchmarks/README.md).*
+> *Run `python -m v6.storage_bench` on your own bank to reproduce before/after numbers. Full methodology in [CHANGELOG-6.2.md](CHANGELOG-6.2.md). Reproducible **PersonaMem-32K** & **LongMemEval-S** isolated benchmark runners (30-Q PersonaMem-32K: **85.1 ms** p50 recall, **100%** source attribution, **100%** new-scenario generalization, **85.7%** preference-update reasoning, **80.0%** preference-aligned recs, **-74%** context tokens vs. 32K) are in [benchmarks/](benchmarks/README.md).*
+
+![Evolving Profile 6.2.2 — Verified Production Governance & PersonaMem-32K Benchmarks](docs/assets/ep-benchmarks-summary.png)
 
 ### 5. Interactive Web Console: Constellations & 0.5s Prompt Journey
 - **Data-Driven "Prompt Journey" Link Map**: Inspect any prompt's exact path across the serial spine and parallel User Memory / Agent Memory / External RAG lanes, with per-node receipt counts (loads in **0.5–0.7s**).

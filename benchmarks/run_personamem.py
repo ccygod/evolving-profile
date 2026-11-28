@@ -110,10 +110,11 @@ def main() -> int:
     parser.add_argument("--contexts-jsonl", type=Path, required=True)
     parser.add_argument("--api-url", default="http://127.0.0.1:12088")
     parser.add_argument("--llm-url", default="http://127.0.0.1:12095/v1")
-    parser.add_argument("--model", default="qwen3.7-flash-2026-07-15")
+    parser.add_argument("--model", default="gpt-6-luna")
+    parser.add_argument("--mode", default="recall", choices=["recall", "reflect"])
     parser.add_argument("--api-key", default="local")
-    parser.add_argument("--budget", default="mid", choices=["low", "mid", "high"])
-    parser.add_argument("--max-tokens", type=int, default=4096)
+    parser.add_argument("--budget", default="high", choices=["low", "mid", "high"])
+    parser.add_argument("--max-tokens", type=int, default=6000)
     parser.add_argument("--max-contexts", type=int, default=2, help="Number of shared persona contexts to evaluate")
     parser.add_argument("--limit", type=int, default=20, help="Max total questions across selected contexts")
     parser.add_argument("--keep-bank", action="store_true")
@@ -173,33 +174,58 @@ def main() -> int:
                 options = ast.literal_eval(qrow["all_options"])
 
                 t0 = time.perf_counter()
-                recall_resp = _http_json(
-                    "POST",
-                    f"{base}/memories/recall",
-                    {
-                        "query": user_msg,
-                        "budget": args.budget,
-                        "max_tokens": args.max_tokens,
-                    },
-                    timeout=90.0,
-                )
-                recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
-
-                rlist = recall_resp.get("results", [])
-                sourced = sum(
-                    1 for r in rlist if r.get("document_id") or r.get("source_document_id") or r.get("id")
-                )
-                mem_lines = [f"- {(r.get('text') or '').strip()}" for r in rlist if (r.get("text") or "").strip()]
-                context_block = "\n".join(mem_lines)
+                if args.mode == "reflect":
+                    reflect_resp = _http_json(
+                        "POST",
+                        f"{base}/reflect",
+                        {
+                            "query": (
+                                f"Given this user message: '{user_msg}', summarize all relevant user preferences, "
+                                "persona traits, preference updates, and reasons for any preference changes."
+                            ),
+                            "budget": args.budget,
+                            "max_tokens": args.max_tokens,
+                        },
+                        timeout=120.0,
+                    )
+                    recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+                    based_on = reflect_resp.get("based_on") or []
+                    rlist = based_on if isinstance(based_on, list) else []
+                    sourced = len(rlist) if rlist else (1 if reflect_resp.get("text") else 0)
+                    context_block = (reflect_resp.get("text") or "").strip()
+                else:
+                    recall_resp = _http_json(
+                        "POST",
+                        f"{base}/memories/recall",
+                        {
+                            "query": user_msg,
+                            "budget": args.budget,
+                            "max_tokens": args.max_tokens,
+                        },
+                        timeout=90.0,
+                    )
+                    recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+                    rlist = recall_resp.get("results", [])
+                    sourced = sum(
+                        1 for r in rlist if r.get("document_id") or r.get("source_document_id") or r.get("id")
+                    )
+                    mem_lines = [
+                        f"- [{r.get('occurred_start') or r.get('mentioned_at') or ''}] {(r.get('text') or '').strip()}"
+                        for r in rlist
+                        if (r.get("text") or "").strip()
+                    ]
+                    context_block = "\n".join(mem_lines)
                 options_text = "\n".join(options)
 
                 prompt = (
                     "You are selecting the single response that best matches the user's known preferences, "
-                    "persona, and conversation history based ONLY on the retrieved memories below.\n\n"
+                    "persona, and most recent preference evolution based ONLY on the retrieved memories below. "
+                    "Pay close attention to preference updates (newer preferences supersede older ones) and the exact reasons behind updates.\n\n"
                     f"Retrieved Memories:\n{context_block or '(none)'}\n\n"
                     f"User Message: {user_msg}\n\n"
                     f"Options:\n{options_text}\n\n"
-                    "Respond with ONLY the letter in parentheses, e.g. (a), (b), (c), or (d)."
+                    "Think briefly about which option aligns with the latest user preference and avoids contradictions, "
+                    "then end your response with the final choice in parentheses, e.g. (a), (b), (c), or (d)."
                 )
                 raw_pred = _chat_completion(
                     args.llm_url,
@@ -207,9 +233,11 @@ def main() -> int:
                     [{"role": "user", "content": prompt}],
                     api_key=args.api_key,
                     temperature=0.0,
-                    max_tokens=16,
+                    max_tokens=200,
                 )
-                pred = _extract_choice(raw_pred)
+                # Extract the last parenthesized choice (a)-(d)
+                matches = re.findall(r"\(([a-dA-D])\)", raw_pred)
+                pred = f"({matches[-1].lower()})" if matches else _extract_choice(raw_pred)
                 correct = pred == gold
                 results.append(
                     {

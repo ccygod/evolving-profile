@@ -160,6 +160,7 @@ def evaluate_question(
     budget: str,
     max_tokens: int,
     max_sessions_per_q: int,
+    mode: str,
     keep_bank: bool,
 ) -> dict[str, Any]:
     qid = str(row.get("question_id", uuid.uuid4().hex[:8]))
@@ -219,55 +220,79 @@ def evaluate_question(
             )
 
         t0 = time.perf_counter()
-        recall_resp = _http_json(
-            "POST",
-            f"{base}/memories/recall",
-            {
-                "query": question,
-                "budget": budget,
-                "max_tokens": max_tokens,
-            },
-            timeout=90.0,
-        )
-        recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+        if mode == "reflect":
+            reflect_resp = _http_json(
+                "POST",
+                f"{base}/reflect",
+                {
+                    "query": f"Current date: {qdate}. Question: {question}",
+                    "budget": budget,
+                    "max_tokens": max_tokens,
+                    "context": (
+                        "Answer strictly from the stored conversation memories. Track temporal order and "
+                        "knowledge updates (newer facts supersede older ones). If the answer was never mentioned, "
+                        "explicitly abstain."
+                    ),
+                },
+                timeout=120.0,
+            )
+            recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+            hypothesis = (reflect_resp.get("text") or "").strip()
+            based_on = reflect_resp.get("based_on") or []
+            recalled_count = len(based_on) if isinstance(based_on, list) else (1 if hypothesis else 0)
+            sourced_count = recalled_count
+            context_chars = len(hypothesis)
+        else:
+            recall_resp = _http_json(
+                "POST",
+                f"{base}/memories/recall",
+                {
+                    "query": question,
+                    "budget": budget,
+                    "max_tokens": max_tokens,
+                },
+                timeout=90.0,
+            )
+            recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
 
-        results = recall_resp.get("results", [])
-        recalled_count = len(results)
-        memory_lines = []
-        for r in results:
-            txt = (r.get("text") or "").strip()
-            doc_id = r.get("document_id") or r.get("source_document_id") or r.get("id")
-            if doc_id:
-                sourced_count += 1
-            if txt:
-                occ = r.get("occurred_start") or r.get("mentioned_at") or ""
-                prefix = f"[{occ}] " if occ else ""
-                memory_lines.append(f"- {prefix}{txt}")
+            results = recall_resp.get("results", [])
+            recalled_count = len(results)
+            memory_lines = []
+            for r in results:
+                txt = (r.get("text") or "").strip()
+                doc_id = r.get("document_id") or r.get("source_document_id") or r.get("id")
+                if doc_id:
+                    sourced_count += 1
+                if txt:
+                    occ = r.get("occurred_start") or r.get("mentioned_at") or ""
+                    prefix = f"[{occ}] " if occ else ""
+                    memory_lines.append(f"- {prefix}{txt}")
 
-        context_block = "\n".join(memory_lines)
-        context_chars = len(context_block)
+            context_block = "\n".join(memory_lines)
+            context_chars = len(context_block)
 
-        sys_prompt = (
-            "You are answering a question about a user's past conversations using ONLY the retrieved memories below. "
-            "If the memories do not contain enough evidence to answer, explicitly say you do not know / it was not mentioned. "
-            "Be concise and accurate."
-        )
-        user_prompt = (
-            f"Current Question Date: {qdate}\n"
-            f"Retrieved Memories:\n{context_block or '(none)'}\n\n"
-            f"Question: {question}"
-        )
-        hypothesis = _chat_completion(
-            llm_url,
-            model,
-            [
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            api_key=api_key,
-            temperature=0.0,
-            max_tokens=200,
-        )
+            sys_prompt = (
+                "You are answering a question about a user's past conversations using ONLY the retrieved memories below. "
+                "Pay careful attention to timestamps, temporal ordering, multi-session aggregation, and knowledge updates "
+                "(newer facts supersede older ones). If the memories do not contain enough evidence to answer, explicitly "
+                "say you do not know / it was not mentioned. Be concise and accurate."
+            )
+            user_prompt = (
+                f"Current Question Date: {qdate}\n"
+                f"Retrieved Memories:\n{context_block or '(none)'}\n\n"
+                f"Question: {question}"
+            )
+            hypothesis = _chat_completion(
+                llm_url,
+                model,
+                [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                api_key=api_key,
+                temperature=0.0,
+                max_tokens=256,
+            )
 
         correct, reason = _judge_answer(
             llm_url, judge_model, question, gold, hypothesis, qtype, api_key=api_key
@@ -302,11 +327,12 @@ def main() -> int:
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--api-url", default="http://127.0.0.1:12088")
     parser.add_argument("--llm-url", default="http://127.0.0.1:12095/v1")
-    parser.add_argument("--model", default="qwen3.7-flash-2026-07-15")
+    parser.add_argument("--model", default="gpt-6-luna")
     parser.add_argument("--judge-model", default="qwen3.6-plus")
+    parser.add_argument("--mode", default="reflect", choices=["recall", "reflect"])
     parser.add_argument("--api-key", default="local")
-    parser.add_argument("--budget", default="mid", choices=["low", "mid", "high"])
-    parser.add_argument("--max-tokens", type=int, default=4096)
+    parser.add_argument("--budget", default="high", choices=["low", "mid", "high"])
+    parser.add_argument("--max-tokens", type=int, default=6000)
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--max-sessions", type=int, default=0, help="0 = all haystack sessions")
     parser.add_argument("--keep-bank", action="store_true")
@@ -330,6 +356,7 @@ def main() -> int:
             budget=args.budget,
             max_tokens=args.max_tokens,
             max_sessions_per_q=args.max_sessions,
+            mode=args.mode,
             keep_bank=args.keep_bank,
         )
         results.append(res)

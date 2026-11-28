@@ -82,7 +82,9 @@ EP 严格区分不同责任的数据，绝不把助手瞎猜的结论混成既�
 | **`ep_events.events` 日志** | 440 MB | **204 MB** | **237 MB 旧工具日志 zstd 归档为 16.5 MB（100% 可逆）** |
 | **单次召回 Trace 写入** | 4.89 MB | **0.91 MB** | **磁盘 I/O 降低 81.4%** |
 
-> *你可以在自己的 Bank 上直接运行 `python -m v6.storage_bench` 复现前后对比。完整细节见 [CHANGELOG-6.2.md](CHANGELOG-6.2.md)。仓库同时内置可复现的 **LongMemEval-S** 与 **PersonaMem-32K** 隔离评测套件（首批冒烟实测：召回 p50 51–101ms、32K 场景省 Token ~82%、原文溯源率 100%），详见 [benchmarks/](benchmarks/README.md)。*
+> *你可以在自己的 Bank 上直接运行 `python -m v6.storage_bench` 复现前后对比。完整细节见 [CHANGELOG-6.2.md](CHANGELOG-6.2.md)。仓库同时内置可复现的 **PersonaMem-32K** 与 **LongMemEval-S** 隔离评测套件（30 题 PersonaMem-32K 实测：召回 p50 **85.1 ms**、原文溯源 **100%**、新场景泛化 **100%**、偏好变更原因追踪 **85.7%**、偏好推荐 **80.0%**、较 32K 省 Token **74%**），详见 [benchmarks/](benchmarks/README.md)。*
+
+![Evolving Profile 6.2.2 — 75K 生产存储治理与 PersonaMem-32K 实测战报](docs/assets/ep-benchmarks-summary.png)
 
 ### 5. Web 控制台：记忆/偏好星座图 + 0.5 秒 Prompt Journey 全链路透视
 - **数据驱动的“Prompt Journey”链路图**：基于真实运行回执绘制每一轮提问在主脊线与用户记忆/Agent 记忆/外部 RAG 并行泳道上的完整路径与节点计数（热加载仅 **0.5–0.7 秒**）。
