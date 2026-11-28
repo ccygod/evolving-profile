@@ -82,7 +82,7 @@ Measured on a real macOS installation with **~75,000 memory units** using the bu
 | **`ep_events.events` tool logs** | 440 MB | **204 MB** | **237 MB archived → 16.5 MB zstd (100% reversible)** |
 | **Trace write per recall** | 4.89 MB | **0.91 MB** | **-81.4% I/O overhead** |
 
-> *Run `python -m v6.storage_bench` on your own bank to reproduce before/after numbers. Full methodology in [CHANGELOG-6.2.md](CHANGELOG-6.2.md). Reproducible **LongMemEval-S** & **PersonaMem-32K** isolated benchmarks (`ep_sota` = multi-facet recall + chronological `read_source` readback): **91.7% (11/12)** on LongMemEval-S (**100%** on Knowledge-Update, Temporal, Preference, User & Assistant at **102.5 ms** p50) and **70.0% (21/30)** overall / **100%** on Preference Evolution & New-Scenario Generalization on PersonaMem-32K (**100%** source attribution) — full runners & raw JSONs in [benchmarks/](benchmarks/README.md).*
+> *Run `python -m v6.storage_bench` on your own bank to reproduce before/after numbers. Full methodology in [CHANGELOG-6.2.md](CHANGELOG-6.2.md). Reproducible **PersonaMem-32K** & **LongMemEval-S** isolated benchmarks (`ep_sota` = cheap local ingestion + multi-facet recall + chronological `read_source` readback): **94.6% (35/37)** strictly blind on **PersonaMem-32K** with a frontier host agent (**100%** on Preference Evolution 9/9, New Ideas 6/6, Preference Recs 5/5 & Generalizing 4/4 at **164.5 ms** p50) and **91.7% (11/12)** on **LongMemEval-S** (**100%** on 5/6 categories at **102.5 ms** p50, **100%** source attribution) — full runners & raw JSONs in [benchmarks/](benchmarks/README.md).*
 
 ![Evolving Profile 6.2.2 — Verified Production Governance & PersonaMem-32K Benchmarks](docs/assets/ep-benchmarks-summary.png)
 

@@ -82,7 +82,7 @@ EP 严格区分不同责任的数据，绝不把助手瞎猜的结论混成既�
 | **`ep_events.events` 日志** | 440 MB | **204 MB** | **237 MB 旧工具日志 zstd 归档为 16.5 MB（100% 可逆）** |
 | **单次召回 Trace 写入** | 4.89 MB | **0.91 MB** | **磁盘 I/O 降低 81.4%** |
 
-> *你可以在自己的 Bank 上直接运行 `python -m v6.storage_bench` 复现前后对比。完整细节见 [CHANGELOG-6.2.md](CHANGELOG-6.2.md)。仓库内置可复现的 **LongMemEval-S** 与 **PersonaMem-32K** 隔离评测套件（`ep_sota` 多面召回 + 时间序 `read_source` 原文回读）：LongMemEval-S 达 **91.7% (11/12)**（知识更新/时间推理/偏好/用户/助手 5 类全 **100%**，召回+回读 p50 仅 **102.5 ms**）；PersonaMem-32K 30 题总分 **70.0% (21/30)**（偏好演化 **100%**、新场景泛化 **100%**、变更原因 **85.7%**、偏好推荐 **80.0%**，原文溯源 **100%**），完整脚本与原始 JSON 见 [benchmarks/](benchmarks/README.md)。*
+> *你可以在自己的 Bank 上直接运行 `python -m v6.storage_bench` 复现前后对比。完整细节见 [CHANGELOG-6.2.md](CHANGELOG-6.2.md)。仓库内置可复现的 **PersonaMem-32K** 与 **LongMemEval-S** 隔离评测套件（`ep_sota` 便宜模型后台入库 + 多面召回 + 时间序 `read_source` 原文回读 + 旗舰宿主前台推理）：**PersonaMem-32K 37 题严格盲测达 `94.6% (35/37)`**（偏好演化 9/9、新点子防重复 6/6、偏好推荐 5/5、新场景泛化 4/4 四项全 **100%**，p50 仅 **164.5 ms**）；**LongMemEval-S 达 `91.7% (11/12)`**（5/6 题型全 **100%**，p50 仅 **102.5 ms**，原文溯源 **100%**），完整脚本与原始 JSON 见 [benchmarks/](benchmarks/README.md)。*
 
 ![Evolving Profile 6.2.2 — 75K 生产存储治理与 PersonaMem-32K 实测战报](docs/assets/ep-benchmarks-summary.png)
 

@@ -174,8 +174,74 @@ def main() -> int:
     parser.add_argument("--max-contexts", type=int, default=3)
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--keep-bank", action="store_true")
+    parser.add_argument("--export-blind", type=Path, default=None, help="Export blind EP-retrieved prompts (no gold) for host-agent evaluation")
+    parser.add_argument("--score-predictions", type=Path, default=None, help="Score a JSON map {question_id: choice} against gold labels")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+
+    if args.score_predictions:
+        preds = json.loads(args.score_predictions.read_text(encoding="utf-8"))
+        meta = json.loads(args.export_blind.read_text(encoding="utf-8")) if args.export_blind and args.export_blind.exists() else {}
+        meta_by_qid = {m["question_id"]: m for m in meta.get("items", [])}
+        gold_by_qid: dict[str, dict[str, str]] = {}
+        with args.questions_csv.open(encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                gold_by_qid[row["question_id"]] = row
+        results = []
+        for qid, raw_choice in preds.items():
+            row = gold_by_qid.get(qid)
+            if not row:
+                continue
+            pred = _extract_choice(str(raw_choice))
+            gold = row["correct_answer"].strip().lower()
+            m = meta_by_qid.get(qid, {})
+            results.append({
+                "question_id": qid,
+                "question_type": row["question_type"],
+                "topic": row.get("topic", ""),
+                "recall_ms": m.get("recall_ms", 0.0),
+                "recalled_count": m.get("recalled_count", 0),
+                "readback_docs": m.get("readback_docs", 0),
+                "source_attribution_ratio": m.get("source_attribution_ratio", 1.0),
+                "est_context_tokens": m.get("est_context_tokens", 0),
+                "pred": pred,
+                "gold": gold,
+                "correct": pred == gold,
+            })
+        by_cat: dict[str, dict[str, Any]] = {}
+        for r in results:
+            c = by_cat.setdefault(r["question_type"], {"correct": 0, "total": 0})
+            c["total"] += 1
+            if r["correct"]:
+                c["correct"] += 1
+        for c in by_cat.values():
+            c["accuracy"] = round(c["correct"] / c["total"], 4) if c["total"] else 0.0
+        latencies = [r["recall_ms"] for r in results if r["recall_ms"] > 0]
+        tokens = [r["est_context_tokens"] for r in results]
+        attr = [r["source_attribution_ratio"] for r in results if r["recalled_count"] > 0]
+        summary = {
+            "benchmark": "PersonaMem-32K",
+            "mode": "ep_sota_host_agent",
+            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "config": {"foreground_agent": args.model, "evaluated": len(results)},
+            "overall": {
+                "evaluated": len(results),
+                "correct": sum(1 for r in results if r["correct"]),
+                "accuracy": round(sum(1 for r in results if r["correct"]) / len(results), 4) if results else 0.0,
+                "recall_p50_ms": round(_percentile(latencies, 50), 1),
+                "recall_p95_ms": round(_percentile(latencies, 95), 1),
+                "mean_context_tokens": round(statistics.mean(tokens), 1) if tokens else 0.0,
+                "mean_source_attribution": round(statistics.mean(attr), 4) if attr else 0.0,
+            },
+            "by_category": by_cat,
+            "results": results,
+        }
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("=== PERSONAMEM-32K HOST-AGENT BLIND SUMMARY ===")
+        print(json.dumps(summary["overall"], indent=2))
+        print(json.dumps(summary["by_category"], indent=2))
+        return 0
 
     contexts: dict[str, list[dict[str, Any]]] = {}
     with args.contexts_jsonl.open(encoding="utf-8") as f:
@@ -196,6 +262,7 @@ def main() -> int:
     )
 
     results = []
+    blind_items: list[dict[str, Any]] = []
     t_start = time.perf_counter()
 
     for ctx_id in selected_ctx_ids:
@@ -242,11 +309,12 @@ def main() -> int:
 
                 t0 = time.perf_counter()
                 if args.mode == "ep_sota":
-                    # General 3-facet EP recall: (1) user message, (2) persona & preferences, (3) preference updates & reasons
+                    # General 4-facet EP recall: (1) user message, (2) persona & preferences, (3) preference updates & reasons, (4) prior ideas/items to avoid repetition
                     facets = [
                         user_msg,
                         f"user persona, preferences, likes, dislikes related to: {user_msg[:180]}",
                         "user changed preference, updated opinion, reason for change, recent favorite or dislike",
+                        f"previously suggested ideas, items, recommendations, or activities already discussed or tried regarding: {user_msg[:140]}",
                     ]
                     seen_ids: set[str] = set()
                     rlist: list[dict[str, Any]] = []
@@ -330,6 +398,26 @@ def main() -> int:
                         f"- {(r.get('text') or '').strip()}" for r in rlist if (r.get("text") or "").strip()
                     )
 
+                if args.export_blind:
+                    blind_items.append({
+                        "index": len(blind_items) + 1,
+                        "question_id": qid,
+                        "end_turn": end_turn,
+                        "user_message": user_msg,
+                        "options": options,
+                        "recall_ms": recall_ms,
+                        "recalled_count": len(rlist),
+                        "readback_docs": readback_hits,
+                        "source_attribution_ratio": round(sourced / len(rlist), 4) if rlist else 0.0,
+                        "est_context_tokens": max(1, len(context_block) // 4) if context_block else 0,
+                        "context_block": context_block,
+                    })
+                    print(
+                        f"[EXPORT {len(blind_items)}/{args.limit}] {qid} | recall+readback={recall_ms}ms | docs={readback_hits} | tok~{len(context_block)//4}",
+                        flush=True,
+                    )
+                    continue
+
                 options_text = "\n".join(options)
                 prompt = (
                     "You are selecting the SINGLE best assistant response for the user based strictly on the "
@@ -337,12 +425,14 @@ def main() -> int:
                     "Rules:\n"
                     "1. Later turns supersede earlier turns when the user's preference or opinion evolved.\n"
                     "2. Check every option for factual contradictions against the verified source passages.\n"
-                    "3. Pay close attention to the exact reasons the user gave for changing preferences.\n\n"
+                    "3. Pay close attention to the exact reasons the user gave for changing preferences.\n"
+                    "4. Anti-repetition / Novelty check: if the user is looking for new ideas or fresh suggestions, "
+                    "exclude options that repeat an idea/item already discussed, tried, or rejected in earlier turns.\n\n"
                     f"{context_block}\n\n"
                     f"User's Current Message (at Turn {end_turn}): {user_msg}\n\n"
                     f"Candidate Options:\n{options_text}\n\n"
-                    "Briefly verify each option against the evidence, then end with ONLY the final choice letter "
-                    "in parentheses, e.g. (a), (b), (c), or (d)."
+                    "Respond with ONLY a compact JSON object on one line, with no markdown fences:\n"
+                    '{"choice": "(a)" or "(b)" or "(c)" or "(d)", "reason": "1-sentence verification"}'
                 )
                 raw_pred = _chat_completion(
                     args.llm_url,
@@ -350,9 +440,14 @@ def main() -> int:
                     [{"role": "user", "content": prompt}],
                     api_key=args.api_key,
                     temperature=0.0,
-                    max_tokens=320,
+                    max_tokens=1024,
                 )
-                pred = _extract_choice(raw_pred)
+                try:
+                    s, e = raw_pred.find("{"), raw_pred.rfind("}")
+                    parsed = json.loads(raw_pred[s : e + 1]) if s != -1 and e != -1 else {}
+                    pred = _extract_choice(str(parsed.get("choice") or raw_pred))
+                except Exception:
+                    pred = _extract_choice(raw_pred)
                 correct = pred == gold
                 results.append(
                     {
@@ -380,6 +475,15 @@ def main() -> int:
                     _http_json("DELETE", base, timeout=30.0)
                 except Exception:
                     pass
+
+    if args.export_blind:
+        args.export_blind.parent.mkdir(parents=True, exist_ok=True)
+        args.export_blind.write_text(
+            json.dumps({"benchmark": "PersonaMem-32K", "items": blind_items}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(f"Exported {len(blind_items)} blind items (zero gold labels) to {args.export_blind}", flush=True)
+        return 0
 
     by_cat: dict[str, dict[str, Any]] = {}
     for r in results:
