@@ -583,74 +583,59 @@ export default function BankPage() {
                 <h1 className="text-3xl font-bold mb-2 text-foreground">{t("memories")}</h1>
                 <p className="text-muted-foreground mb-6">{t("memoriesDescription")}</p>
 
-                <div className="mb-6 border-b border-border">
-                  <div className="flex flex-wrap gap-1">
+                <div className="mb-5">
+                  <div className="inline-flex flex-wrap items-center gap-1 rounded-xl bg-muted/80 p-1 border border-border/70">
                     <button
                       onClick={() => handleDataSubTabChange("world")}
-                      className={`relative whitespace-nowrap px-3 py-3 text-sm font-semibold transition-colors sm:px-6 ${
+                      className={`whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all ${
                         subTab === "world"
-                          ? "text-primary"
+                          ? "bg-card text-foreground shadow-xs ring-1 ring-border/70"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       {t("worldFacts")}
-                      {subTab === "world" && (
-                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-                      )}
                     </button>
                     <button
                       onClick={() => handleDataSubTabChange("experience")}
-                      className={`relative whitespace-nowrap px-3 py-3 text-sm font-semibold transition-colors sm:px-6 ${
+                      className={`whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all ${
                         subTab === "experience"
-                          ? "text-primary"
+                          ? "bg-card text-foreground shadow-xs ring-1 ring-border/70"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       {t("experience")}
-                      {subTab === "experience" && (
-                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-                      )}
                     </button>
                     <button
                       onClick={() => handleDataSubTabChange("entities")}
-                      className={`relative whitespace-nowrap px-3 py-3 text-sm font-semibold transition-colors sm:px-6 ${
+                      className={`whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all ${
                         subTab === "entities"
-                          ? "text-primary"
+                          ? "bg-card text-foreground shadow-xs ring-1 ring-border/70"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       {t("entities")}
-                      {subTab === "entities" && (
-                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-                      )}
                     </button>
                     <button
                       onClick={() => handleDataSubTabChange("preferences")}
-                      className={`relative whitespace-nowrap px-3 py-3 text-sm font-semibold transition-colors sm:px-6 ${
+                      className={`whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all ${
                         subTab === "preferences"
-                          ? "text-primary"
+                          ? "bg-card text-foreground shadow-xs ring-1 ring-border/70"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       {locale.startsWith("zh")
                         ? inlineUiText("多维度偏好")
                         : "Multi-dimensional Preferences"}
-                      {subTab === "preferences" && (
-                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-                      )}
                     </button>
                     <button
                       onClick={() => handleDataSubTabChange("context")}
-                      className={`relative whitespace-nowrap px-3 py-3 text-sm font-semibold transition-colors sm:px-6 ${
+                      className={`whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all ${
                         subTab === "context"
-                          ? "text-primary"
+                          ? "bg-card text-foreground shadow-xs ring-1 ring-border/70"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       {locale.startsWith("zh") ? inlineUiText("情景摘要") : "Scenario Summary"}
-                      {subTab === "context" && (
-                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-                      )}
                     </button>
                   </div>
                 </div>

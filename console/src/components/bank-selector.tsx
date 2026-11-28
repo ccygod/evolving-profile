@@ -470,20 +470,30 @@ function BankSelectorInner() {
   };
 
   return (
-    <div className="bg-card text-card-foreground border-b-4 border-primary-gradient px-2 py-3 sm:px-5">
-      <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm sm:gap-4">
-        {/* Logo */}
-        <Image
-          src={withBasePath("/logo.png")}
-          alt={BRAND_ALT}
-          width={40}
-          height={40}
-          className="h-10 w-auto"
-          unoptimized
-        />
+    <div className="sticky top-0 z-30 bg-background/90 backdrop-blur-md text-foreground border-b border-border/80 px-3 py-2.5 sm:px-5">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm sm:gap-3.5">
+        {/* Brand mark + wordmark */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <Image
+            src={withBasePath("/logo.png")}
+            alt={BRAND_ALT}
+            width={32}
+            height={32}
+            className="h-7 w-auto rounded-md"
+            unoptimized
+          />
+          <div className="hidden md:flex items-center gap-1.5">
+            <span className="font-heading text-sm font-semibold tracking-tight text-foreground">
+              Evolving Profile
+            </span>
+            <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground border border-border/70">
+              6.2
+            </span>
+          </div>
+        </div>
 
         {/* Separator */}
-        <div className="hidden h-8 w-px bg-border sm:block" />
+        <div className="hidden h-5 w-px bg-border sm:block" />
 
         {/* Memory Bank Selector */}
         <Popover
@@ -498,7 +508,7 @@ function BankSelectorInner() {
               variant="outline"
               role="combobox"
               aria-expanded={open}
-              className="min-w-0 flex-1 justify-between border-2 border-primary font-bold hover:bg-accent sm:w-[250px] sm:flex-none"
+              className="h-9 min-w-0 flex-1 justify-between rounded-lg border border-border bg-card font-semibold shadow-2xs hover:bg-accent/70 sm:w-[240px] sm:flex-none"
             >
               <span className="truncate">{currentBank || requestedBank || tNavBank("select")}</span>
               <span className="ml-2 shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium">
@@ -1369,20 +1379,20 @@ export function BankSelector() {
   return (
     <Suspense
       fallback={
-        <div className="bg-card text-card-foreground border-b-4 border-primary-gradient px-2 py-3 sm:px-5">
-          <div className="flex min-w-0 items-center gap-2 text-sm sm:gap-4">
+        <div className="sticky top-0 z-30 bg-background/90 backdrop-blur-md text-foreground border-b border-border/80 px-3 py-2.5 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2 text-sm sm:gap-3.5">
             <Image
               src={withBasePath("/logo.png")}
               alt={BRAND_ALT}
-              width={40}
-              height={40}
-              className="h-10 w-auto"
+              width={32}
+              height={32}
+              className="h-7 w-auto rounded-md"
               unoptimized
             />
-            <div className="hidden h-8 w-px bg-border sm:block" />
+            <div className="hidden h-5 w-px bg-border sm:block" />
             <Button
               variant="outline"
-              className="min-w-0 flex-1 justify-between border-2 border-primary font-bold sm:w-[250px] sm:flex-none"
+              className="h-9 min-w-0 flex-1 justify-between rounded-lg border border-border bg-card font-semibold sm:w-[240px] sm:flex-none"
               disabled
             >
               Loading...

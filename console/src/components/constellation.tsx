@@ -1543,7 +1543,16 @@ export function Constellation({
               zIndex: 50,
               background: isDark ? "#09090b" : "#ffffff",
             }
-          : { position: "relative", width: "100%", height: `${height}px` }
+          : {
+              position: "relative",
+              width: "100%",
+              height: `${height}px`,
+              borderRadius: "12px",
+              backgroundImage: isDark
+                ? "radial-gradient(rgba(148,163,184,0.16) 1px, transparent 1px)"
+                : "radial-gradient(rgba(24,24,27,0.10) 1px, transparent 1px)",
+              backgroundSize: "20px 20px",
+            }
       }
     >
       <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
