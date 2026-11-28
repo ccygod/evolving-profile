@@ -24,9 +24,9 @@
 
 </div>
 
-### 🎬 Watch the 68-Second Launch Video (Narrated + Subtitled, Plays Inline)
+### 🎬 Watch the 70-Second Launch Video (English Voiceover + Subtitles, Plays Inline)
 
-https://github.com/user-attachments/assets/1ef760e7-e7a1-4a54-9ada-3913cb558b13
+https://github.com/user-attachments/assets/661a37ad-4dbd-400e-95f2-357ef6040b77
 
 ---
 
