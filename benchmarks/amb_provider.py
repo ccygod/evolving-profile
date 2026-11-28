@@ -1,13 +1,14 @@
-"""Official Agent Memory Benchmark (AMB / agentmemorybenchmark.ai) provider for Evolving Profile (EP).
+"""Evolving Profile (EP 6.2+) memory provider for Agent Memory Benchmark (AMB).
 
-Drop-in `MemoryProvider` compatible with `vectorize-io/agent-memory-benchmark`
-(`src/memory_bench/memory/evolving_profile.py`).
+Connects to a local or self-hosted Evolving Profile Memory API (default:
+``http://127.0.0.1:12088``, override with ``EP_API_URL``) using only the Python
+standard library — no additional dependencies required.
 
-Uses EP's production architecture:
-  1. Per-unit isolated banks (`amb-ep-<unit_id>`)
-  2. Timestamped document ingestion (`POST /v1/default/banks/{bank_id}/memories`)
-  3. Multi-facet recall + chronological `read_source` original-document readback
-     (`GET /v1/default/banks/{bank_id}/documents/{document_id}`)
+Architecture highlights:
+  - Per-unit isolated banks (``amb-ep-<unit_id>``) created and cleaned up per run
+  - Timestamped document ingestion with structured-message formatting
+  - Multi-facet recall + chronological ``read_source`` original-document readback
+    with explicit ``source_ids`` attribution
 """
 from __future__ import annotations
 
@@ -20,23 +21,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-try:
-    from memory_bench.memory.base import MemoryProvider
-    from memory_bench.models import Document
-except ImportError:
-    # Standalone fallback so the module can also be imported & tested inside ep-v6
-    from dataclasses import dataclass, field
-
-    @dataclass
-    class Document:  # type: ignore[no-redef]
-        id: str
-        content: str
-        metadata: dict[str, Any] = field(default_factory=dict)
-
-    class MemoryProvider:  # type: ignore[no-redef]
-        name: str = ""
-        description: str = ""
-        kind: str = "local"
+from ..models import Document
+from .base import MemoryProvider
 
 
 def _http_json(
@@ -63,13 +49,14 @@ def _safe_bank_id(prefix: str, unit_id: str | None) -> str:
     return f"{prefix}-{raw[:48]}" if raw else f"{prefix}-default"
 
 
-class EvolvingProfileProvider(MemoryProvider):
-    """Evolving Profile (EP 6.2+) provider with multi-facet recall & chronological read_source."""
+class EvolvingProfileMemoryProvider(MemoryProvider):
+    """Evolving Profile (EP 6.2+) local-first memory provider with read_source readback."""
 
     name = "evolving-profile"
     description = (
-        "Local-first AI memory, 5D conditional preferences & reusable agent experience "
-        "control plane (built on Hindsight) with multi-facet recall and read_source readback."
+        "Evolving Profile (EP 6.2+): local-first AI memory, 5D conditional preferences "
+        "& agent experience control plane (built on Hindsight) with multi-facet recall "
+        "and chronological original-source readback."
     )
     kind = "local"
     provider = "evolving-profile"
@@ -86,18 +73,48 @@ class EvolvingProfileProvider(MemoryProvider):
         max_tokens: int = 6000,
         bank_prefix: str = "amb-ep",
         use_readback: bool = True,
+        batch_size: int = 3,
     ) -> None:
         self.api_url = (api_url or os.environ.get("EP_API_URL") or "http://127.0.0.1:12088").rstrip("/")
         self.budget = budget
         self.max_tokens = max_tokens
         self.bank_prefix = bank_prefix
         self.use_readback = use_readback
+        self.batch_size = max(1, batch_size)
         self._created_banks: set[str] = set()
         self._doc_order: dict[str, dict[str, str]] = collections.defaultdict(dict)
 
     def _bank_url(self, user_id: str | None) -> tuple[str, str]:
         bid = _safe_bank_id(self.bank_prefix, user_id)
         return bid, f"{self.api_url}/v1/default/banks/{bid}"
+
+    @staticmethod
+    def _format_content(doc: Document) -> str:
+        """Render Document content cleanly, preserving structured turns when present."""
+        messages = doc.messages
+        if not messages and doc.content.strip().startswith("["):
+            try:
+                parsed = json.loads(doc.content)
+                if isinstance(parsed, list):
+                    messages = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        if messages and isinstance(messages, list):
+            parts = []
+            for msg in messages:
+                if isinstance(msg, dict):
+                    role = str(msg.get("role") or "user").capitalize()
+                    content = str(msg.get("content") or "").strip()
+                    if content:
+                        parts.append(f"{role}: {content}")
+            if parts:
+                text = "\n".join(parts)
+                if doc.timestamp:
+                    text = f"[Date: {doc.timestamp}]\n{text}"
+                return text
+
+        return doc.content
 
     def prepare(self, store_dir: Path, unit_ids: set[str] | None = None, reset: bool = True) -> None:
         if reset and unit_ids:
@@ -113,31 +130,31 @@ class EvolvingProfileProvider(MemoryProvider):
     def ingest(self, documents: list[Document]) -> None:
         by_user: dict[str, list[Document]] = collections.defaultdict(list)
         for doc in documents:
-            uid = str((doc.metadata or {}).get("user_id") or "default")
+            uid = str(doc.user_id or "default")
             by_user[uid].append(doc)
 
         for uid, docs in by_user.items():
             bid, base = self._bank_url(uid)
             self._created_banks.add(bid)
-            items = []
+            items: list[dict[str, Any]] = []
             for idx, doc in enumerate(docs):
-                meta = doc.metadata or {}
-                ts = meta.get("timestamp") or meta.get("date")
                 item: dict[str, Any] = {
-                    "content": doc.content,
+                    "content": self._format_content(doc),
                     "document_id": doc.id,
-                    "context": str(meta.get("context") or f"Document {doc.id}"),
+                    "context": str(doc.context or f"Document {doc.id}"),
                 }
-                if ts:
-                    item["timestamp"] = str(ts)
+                if doc.timestamp:
+                    item["timestamp"] = str(doc.timestamp)
+                if doc.tags:
+                    item["tags"] = list(doc.tags)
                 items.append(item)
-                self._doc_order[bid][doc.id] = str(ts or f"{idx:06d}")
+                self._doc_order[bid][doc.id] = str(doc.timestamp or f"{idx:06d}")
 
-            for i in range(0, len(items), 3):
+            for i in range(0, len(items), self.batch_size):
                 _http_json(
                     "POST",
                     f"{base}/memories",
-                    {"items": items[i : i + 3], "async": False},
+                    {"items": items[i : i + self.batch_size], "async": False},
                     timeout=300.0,
                 )
 
@@ -145,7 +162,7 @@ class EvolvingProfileProvider(MemoryProvider):
         encoded = urllib.parse.quote(doc_id, safe="")
         try:
             resp = _http_json("GET", f"{base}/documents/{encoded}", timeout=30.0)
-            return (resp.get("original_text") or resp.get("content") or resp.get("text") or "").strip()
+            return str(resp.get("original_text") or resp.get("content") or resp.get("text") or "").strip()
         except Exception:
             return ""
 
@@ -155,7 +172,6 @@ class EvolvingProfileProvider(MemoryProvider):
         k: int = 10,
         user_id: str | None = None,
         query_timestamp: str | None = None,
-        filters: dict | None = None,
     ) -> tuple[list[Document], dict | None]:
         bid, base = self._bank_url(user_id)
         facets = [
@@ -175,7 +191,7 @@ class EvolvingProfileProvider(MemoryProvider):
             if query_timestamp:
                 payload["query_timestamp"] = query_timestamp
             resp = _http_json("POST", f"{base}/memories/recall", payload, timeout=90.0)
-            w = 1.5 if f_idx == 0 else 1.0
+            weight = 1.5 if f_idx == 0 else 1.0
             for rank, item in enumerate(resp.get("results", [])):
                 rid = str(item.get("id") or f"{f_idx}:{rank}")
                 if rid not in seen_ids:
@@ -183,9 +199,10 @@ class EvolvingProfileProvider(MemoryProvider):
                     recalled.append(item)
                 did = item.get("document_id") or item.get("source_document_id") or ""
                 if did:
-                    doc_scores[did] += w / (rank + 1.0)
+                    doc_scores[str(did)] += weight / (rank + 1.0)
 
         out_docs: list[Document] = []
+        readback_count = 0
         if self.use_readback and doc_scores:
             top_dids = [d for d, _ in sorted(doc_scores.items(), key=lambda x: -x[1])[: max(1, min(k, 8))]]
             order_map = self._doc_order.get(bid, {})
@@ -193,33 +210,39 @@ class EvolvingProfileProvider(MemoryProvider):
             for did in top_dids:
                 txt = self._read_source(base, did)
                 if txt:
+                    readback_count += 1
                     out_docs.append(
                         Document(
                             id=did,
                             content=txt,
-                            metadata={"source": "ep_read_source", "bank_id": bid},
+                            user_id=user_id,
+                            source_ids=[did],
+                            context="ep_read_source",
                         )
                     )
 
-        # Append distilled memory highlights up to k
         for item in recalled:
             if len(out_docs) >= k:
                 break
-            txt = (item.get("text") or "").strip()
+            txt = str(item.get("text") or "").strip()
             if txt:
+                did = item.get("document_id") or item.get("source_document_id")
                 out_docs.append(
                     Document(
                         id=str(item.get("id") or ""),
                         content=txt,
-                        metadata={
-                            "source": "ep_recall",
-                            "document_id": item.get("document_id"),
-                            "occurred_start": item.get("occurred_start"),
-                        },
+                        user_id=user_id,
+                        timestamp=item.get("occurred_start"),
+                        source_ids=[str(did)] if did else None,
+                        context="ep_recall",
                     )
                 )
 
-        return out_docs[:k], {"bank_id": bid, "recalled_count": len(recalled), "readback_docs": len(out_docs)}
+        return out_docs[:k], {
+            "bank_id": bid,
+            "recalled_count": len(recalled),
+            "readback_docs": readback_count,
+        }
 
     def cleanup(self) -> None:
         for bid in list(self._created_banks):

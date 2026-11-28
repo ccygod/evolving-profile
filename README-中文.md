@@ -86,11 +86,14 @@ EP 严格区分不同责任的数据，绝不把助手瞎猜的结论混成既�
 
 ![Evolving Profile 6.2.2 — 75K 生产存储治理与 PersonaMem-32K 实测战报](docs/assets/ep-benchmarks-summary.png)
 
-### 5. Web 控制台：记忆/偏好星座图 + 0.5 秒 Prompt Journey 全链路透视
+### 5. 全新双主题 Web 控制台：记忆/偏好星座图 + 0.5 秒 Prompt Journey 全链路透视
+- **独立双主题工作台**：暖白亚光（Warm Alabaster）亮色与深曜石（Deep Obsidian）暗色双主题，三平面分组可折叠侧边栏（`记忆平面` · `检索与来源` · `可观测与治理`）、药丸分段子标签与点阵记忆星座图画布。
 - **数据驱动的“Prompt Journey”链路图**：基于真实运行回执绘制每一轮提问在主脊线与用户记忆/Agent 记忆/外部 RAG 并行泳道上的完整路径与节点计数（热加载仅 **0.5–0.7 秒**）。
 - **统一视觉语言的星座图**：直观查看事实、经历、实体、`hard_guardrail` 强护栏偏好以及自动降权/温层节点，点击即可一路溯源到原始来源。
 
-![Codex 与 Claude Desktop 接入 EP 前后的真实界面结构对比](docs/assets/ep-before-after-ui-zh.svg)
+| 亮色模式（Warm Alabaster） | 暗色模式（Deep Obsidian） |
+| :---: | :---: |
+| ![Evolving Profile 6.2 Web 控制台 — 亮色模式](docs/assets/ep-console-light.png) | ![Evolving Profile 6.2 Web 控制台 — 暗色模式](docs/assets/ep-console-dark.png) |
 
 ### 6. 零停机本地内核与跨平台体验
 - **MCP 零停机热重载**：stdio MCP 服务端在源码更新后原地 `exec` 自重载，不断开 Claude/Codex 长连接（`EP_MCP_LIVE_RELOAD=0` 可关闭），自带 Schema 漂移审计（`mcp-schema-drift.jsonl`）与失败审计。

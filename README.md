@@ -86,11 +86,14 @@ Measured on a real macOS installation with **~75,000 memory units** using the bu
 
 ![Evolving Profile 6.2.2 — Verified Production Governance & PersonaMem-32K Benchmarks](docs/assets/ep-benchmarks-summary.png)
 
-### 5. Interactive Web Console: Constellations & 0.5s Prompt Journey
+### 5. Interactive Web Console: Linear/Obsidian Dual-Theme Workspace, Constellations & 0.5s Prompt Journey
+- **Independent Dual-Theme Workspace**: Warm Alabaster light mode + Deep Obsidian dark mode, collapsible 3-plane grouped navigation (`Memory Planes` · `Retrieval & Sources` · `Observability & Ops`), segmented pill sub-tabs, and a dot-grid memory constellation canvas.
 - **Data-Driven "Prompt Journey" Link Map**: Inspect any prompt's exact path across the serial spine and parallel User Memory / Agent Memory / External RAG lanes, with per-node receipt counts (loads in **0.5–0.7s**).
 - **Unified Memory & Preference Constellations**: Explore facts, experiences, entities, `hard_guardrail` preferences, and dimmed warm/low-value nodes with full click-to-source traceability.
 
-![Before and after Evolving Profile across Codex and Claude Desktop](docs/assets/ep-before-after-ui-en.svg)
+| Light Mode (Warm Alabaster) | Dark Mode (Deep Obsidian) |
+| :---: | :---: |
+| ![Evolving Profile 6.2 Web Console — Light Mode](docs/assets/ep-console-light.png) | ![Evolving Profile 6.2 Web Console — Dark Mode](docs/assets/ep-console-dark.png) |
 
 ### 6. Zero-Downtime Local Kernel
 - **Live-Reloading MCP Server**: Stdio MCP adapter fingerprints its own source and reloads in place via `exec` without dropping active host connections (`EP_MCP_LIVE_RELOAD=0` to disable), paired with JSON-RPC `-32602` validation, failure audit, and `mcp-schema-drift.jsonl`.
