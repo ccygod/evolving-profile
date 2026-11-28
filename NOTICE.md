@@ -3,21 +3,23 @@
 Evolving Profile 6.2 is developed on top of Hindsight:
 https://github.com/vectorize-io/hindsight
 
-The 5.1.4 release adds bounded AI repair, automatic AI-report routing, source-envelope recovery, and queue/job reconciliation on the same attribution and license line.
-Read VERSION for the product patch and the release ledger for publication state;
-a personal pre-release does not imply upstream acceptance or stable certification.
+Hindsight (MIT License) provides the upstream memory foundation. Credit for
+that upstream work belongs to the Hindsight project and its contributors.
+Evolving Profile (EP) builds its independently governed control plane,
+multi-host adapters, five-dimensional conditional preference engine, reusable
+agent experience layer, bi-temporal entity state, storage governance, and
+observable execution console on that foundation, and acknowledges related
+research on retain, recall, reflect, and entity/time-aware agent memory.
 
-Hindsight provides the upstream memory foundation. Credit for that upstream
-work belongs to the Hindsight project and its contributors. EP adds its
-independently governed control plane, host adapters, user/agent memory
-organization and conditional preferences on that foundation, and acknowledges
-related research on retain, recall, reflect and entity/time-aware agent memory.
+Read `VERSION` for the exact product patch (`6.2.2`) and `docs/RELEASE-LEDGER.md`
+for publication status. A personal release does not imply upstream endorsement.
 
-Preserve the upstream license and notices for any source component that is
-redistributed from an upstream project. This package does not include the
-publisher's private memory data, API credentials, or hosted service account.
+Preserve this notice and the MIT `LICENSE` (including upstream copyright
+notices) for any source component that is redistributed. This repository is a
+sanitized distribution and contains no private memory data, API credentials,
+or hosted service accounts.
 
-Author and maintainer of this EP 5.1 distribution: CCY.
-The personal GitHub distribution is maintained in the `ccygod/evolving-profile-2.2`
-fork; the upstream project and its repository owner remain separate attribution
-categories.
+Author and maintainer of Evolving Profile: **CCY**.
+Public repositories for the same release line:
+- https://github.com/ccygod/evolving-profile
+- https://github.com/gtkj/evolving-profile
