@@ -15,6 +15,18 @@ Reproducible evaluation scripts for measuring **Evolving Profile (EP)** on publi
 
 Every benchmark run creates a dedicated ephemeral bank (`bench-longmemeval-<id>` or `bench-personamem-<id>`) and deletes it on completion (unless `--keep-bank` is passed). Your personal bank is never read or modified.
 
+## Official Public Leaderboard Adapters
+
+1. **Agent Memory Benchmark (AMB — [agentmemorybenchmark.ai](https://agentmemorybenchmark.ai))**
+   - Adapter: [`benchmarks/amb_provider.py`](amb_provider.py) (`EvolvingProfileProvider` implementing `vectorize-io/agent-memory-benchmark`'s `MemoryProvider` contract).
+2. **Agent Memory Leaderboard (AML / 记忆之巅 — [agentmemoryleaderboard.ai](https://agentmemoryleaderboard.ai))**
+   - Adapter: [`benchmarks/aml_server.py`](aml_server.py) (stdlib HTTP server implementing `GET /health`, idempotent `POST /add`, and `POST /search` backed by EP multi-facet recall + chronological `read_source`).
+
+```bash
+# Start the AML-compatible EP HTTP adapter locally
+python3 benchmarks/aml_server.py --host 127.0.0.1 --port 12110 --api-url http://127.0.0.1:12088
+```
+
 ## Quick Run
 
 ```bash
