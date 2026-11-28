@@ -1,0 +1,158 @@
+{
+  "benchmark": "PersonaMem-32K",
+  "at": "2026-11-28T09:15:06Z",
+  "config": {
+    "model": "qwen3.7-flash-2026-07-15",
+    "budget": "mid",
+    "max_tokens": 4096,
+    "contexts": 1,
+    "evaluated": 9
+  },
+  "overall": {
+    "evaluated": 9,
+    "correct": 5,
+    "accuracy": 0.5556,
+    "recall_p50_ms": 100.8,
+    "recall_p95_ms": 149.1,
+    "mean_context_tokens": 5618,
+    "mean_source_attribution": 1.0,
+    "elapsed_sec": 242.0
+  },
+  "by_category": {
+    "recall_user_shared_facts": {
+      "correct": 0,
+      "total": 1,
+      "accuracy": 0.0
+    },
+    "provide_preference_aligned_recommendations": {
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0
+    },
+    "suggest_new_ideas": {
+      "correct": 0,
+      "total": 2,
+      "accuracy": 0.0
+    },
+    "recalling_the_reasons_behind_previous_updates": {
+      "correct": 2,
+      "total": 2,
+      "accuracy": 1.0
+    },
+    "track_full_preference_evolution": {
+      "correct": 2,
+      "total": 3,
+      "accuracy": 0.6667
+    }
+  },
+  "results": [
+    {
+      "question_id": "acd74206-37dc-4756-94a8-b99a395d9a21",
+      "question_type": "recall_user_shared_facts",
+      "topic": "musicRecommendation",
+      "recall_ms": 53.7,
+      "recalled_count": 7,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 5462,
+      "pred": "(b)",
+      "gold": "(c)",
+      "correct": false
+    },
+    {
+      "question_id": "f546a74f-54de-40d0-9d88-8b0e30467d7b",
+      "question_type": "provide_preference_aligned_recommendations",
+      "topic": "musicRecommendation",
+      "recall_ms": 144.4,
+      "recalled_count": 5,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 5622,
+      "pred": "(d)",
+      "gold": "(d)",
+      "correct": true
+    },
+    {
+      "question_id": "b3588797-acdf-40d3-bcc5-951f81896f95",
+      "question_type": "suggest_new_ideas",
+      "topic": "musicRecommendation",
+      "recall_ms": 83.0,
+      "recalled_count": 5,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 5702,
+      "pred": "(b)",
+      "gold": "(a)",
+      "correct": false
+    },
+    {
+      "question_id": "5370f186-0028-41f4-b436-c48575899fca",
+      "question_type": "suggest_new_ideas",
+      "topic": "musicRecommendation",
+      "recall_ms": 89.8,
+      "recalled_count": 5,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 5631,
+      "pred": "(a)",
+      "gold": "(b)",
+      "correct": false
+    },
+    {
+      "question_id": "a40d5f67-8ec6-480b-a901-9709eecee9b9",
+      "question_type": "recalling_the_reasons_behind_previous_updates",
+      "topic": "musicRecommendation",
+      "recall_ms": 71.5,
+      "recalled_count": 6,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 5636,
+      "pred": "(d)",
+      "gold": "(d)",
+      "correct": true
+    },
+    {
+      "question_id": "6142fba4-a233-405a-a4fe-a5b2e27374a7",
+      "question_type": "recalling_the_reasons_behind_previous_updates",
+      "topic": "musicRecommendation",
+      "recall_ms": 100.8,
+      "recalled_count": 5,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 5647,
+      "pred": "(c)",
+      "gold": "(c)",
+      "correct": true
+    },
+    {
+      "question_id": "2cef53ac-c165-41b5-a31f-c3064106471f",
+      "question_type": "track_full_preference_evolution",
+      "topic": "musicRecommendation",
+      "recall_ms": 151.0,
+      "recalled_count": 5,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 5656,
+      "pred": "(a)",
+      "gold": "(a)",
+      "correct": true
+    },
+    {
+      "question_id": "4afc48ca-e6a7-4467-abd2-911915199315",
+      "question_type": "track_full_preference_evolution",
+      "topic": "musicRecommendation",
+      "recall_ms": 119.7,
+      "recalled_count": 5,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 5647,
+      "pred": "(d)",
+      "gold": "(a)",
+      "correct": false
+    },
+    {
+      "question_id": "defecce2-ff39-438e-ae41-90f3bcf9cb48",
+      "question_type": "track_full_preference_evolution",
+      "topic": "musicRecommendation",
+      "recall_ms": 146.3,
+      "recalled_count": 7,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 5559,
+      "pred": "(b)",
+      "gold": "(b)",
+      "correct": true
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "benchmark": "LongMemEval-S",
+  "at": "2026-11-28T09:27:32Z",
+  "config": {
+    "model": "qwen3.7-flash-2026-07-15",
+    "judge_model": "qwen3.6-plus",
+    "budget": "mid",
+    "max_tokens": 4096,
+    "limit": 6,
+    "max_sessions": 6
+  },
+  "overall": {
+    "evaluated": 6,
+    "errors": 0,
+    "correct": 4,
+    "accuracy": 0.6667,
+    "recall_p50_ms": 51.4,
+    "recall_p95_ms": 96.5,
+    "mean_context_tokens": 4632.2,
+    "mean_source_attribution": 1.0,
+    "elapsed_sec": 744.3
+  },
+  "by_category": {
+    "knowledge-update": {
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0
+    },
+    "multi-session": {
+      "correct": 0,
+      "total": 1,
+      "accuracy": 0.0
+    },
+    "single-session-assistant": {
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0
+    },
+    "single-session-preference": {
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0
+    },
+    "single-session-user": {
+      "correct": 1,
+      "total": 1,
+      "accuracy": 1.0
+    },
+    "temporal-reasoning": {
+      "correct": 0,
+      "total": 1,
+      "accuracy": 0.0
+    }
+  },
+  "results": [
+    {
+      "question_id": "6a1eabeb",
+      "question_type": "knowledge-update",
+      "sessions_ingested": 6,
+      "recall_ms": 77.5,
+      "recalled_count": 12,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 4439,
+      "correct": true,
+      "reason": "The model correctly states the personal best time as 25:50, which exactly matches the reference answer.",
+      "hypothesis": "Based on your past conversations, your personal best time for the charity 5K run is 25:50.",
+      "gold": "25 minutes and 50 seconds (or 25:50)",
+      "error": null
+    },
+    {
+      "question_id": "0a995998",
+      "question_type": "multi-session",
+      "sessions_ingested": 6,
+      "recall_ms": 34.0,
+      "recalled_count": 7,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 4446,
+      "correct": false,
+      "reason": "The model incorrectly claims the information is missing, whereas the reference answer explicitly states there are 3 items.",
+      "hypothesis": "Based on the provided memories, it was not mentioned how many items of clothing you need to pick up or return. The conversations only reference picking up one specific item (a navy blue blazer from dry cleaning) and focus on strategies like using a notes app or calendar reminders to track any future pickups or returns. If you have a specific list or count in mind, feel free to share it!",
+      "gold": "3",
+      "error": null
+    },
+    {
+      "question_id": "7161e7e2",
+      "question_type": "single-session-assistant",
+      "sessions_ingested": 6,
+      "recall_ms": 102.8,
+      "recalled_count": 7,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 4044,
+      "correct": true,
+      "reason": "The model accurately states Admon's Sunday shift as 8 am – 4 pm (Day Shift), which exactly matches the reference answer's core information.",
+      "hypothesis": "Based on our previous conversation, Admon was scheduled for the **8 am – 4 pm (Day Shift)** on Sunday.",
+      "gold": "Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.",
+      "error": null
+    },
+    {
+      "question_id": "8a2466db",
+      "question_type": "single-session-preference",
+      "sessions_ingested": 6,
+      "recall_ms": 32.7,
+      "recalled_count": 4,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 5087,
+      "correct": true,
+      "reason": "The model correctly tailors its recommendations specifically to Adobe Premiere Pro, directly aligning with the reference answer's constraint to avoid general video editing resources or other software.",
+      "hypothesis": "Based on our previous conversation, here are the recommended resources for learning more about video editing with Adobe Premiere Pro:\n\n* Adobe Premiere Pro's official documentation and tutorials\n* YouTube channels like Premiere Bro, Video Copilot, and Adobe Creative Cloud\n* Online courses on platforms like Udemy, LinkedIn Learning, and Skillshare\n* Communities and forums, such as Reddit's r/premierepro and Adobe's Premiere Pro forum",
+      "gold": "The user would prefer responses that suggest resources specifically tailored to Adobe Premiere Pro, especially those that delve into its advanced settings. They might not prefer general video editing resources or resources related to other video editing software.",
+      "error": null
+    },
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "sessions_ingested": 6,
+      "recall_ms": 34.9,
+      "recalled_count": 6,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 4893,
+      "correct": true,
+      "reason": "The model accurately identifies the degree as Business Administration, which directly matches the reference answer.",
+      "hypothesis": "You graduated with a degree in Business Administration.",
+      "gold": "Business Administration",
+      "error": null
+    },
+    {
+      "question_id": "gpt4_59149c77",
+      "question_type": "temporal-reasoning",
+      "sessions_ingested": 6,
+      "recall_ms": 67.9,
+      "recalled_count": 6,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 4884,
+      "correct": false,
+      "reason": "The model incorrectly claims the necessary information is missing and fails to provide the correct answer of 7 days as specified in the reference.",
+      "hypothesis": "Based on the provided memories, there is no mention of a visit to the Museum of Modern Art (MoMA). While the records indicate you visited the \"Ancient Civilizations\" exhibit at the Metropolitan Museum of Art on February 1, 2023, I do not have any information about a MoMA trip. Therefore, I cannot determine how many days passed between the two visits.",
+      "gold": "7 days. 8 days (including the last day) is also acceptable.",
+      "error": null
+    }
+  ]
+}
