@@ -4,14 +4,17 @@
 
 [![Version](https://img.shields.io/badge/version-6.2.2-0ea5e9?style=flat-square)](VERSION)
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%2B-3b82f6?style=flat-square)](api/pyproject.toml)
-[![Built on Hindsight](https://img.shields.io/badge/built%20on-Hindsight-8b5cf6?style=flat-square)](https://github.com/vectorize-io/hindsight)
-[![MCP Ready](https://img.shields.io/badge/MCP-热重载-f59e0b?style=flat-square)](host-adapter)
+[![PersonaMem-32K](https://img.shields.io/badge/PersonaMem--32K-94.6%25-10b981?style=flat-square)](benchmarks/README.md)
+[![LongMemEval-S](https://img.shields.io/badge/LongMemEval--S-91.7%25-06b6d4?style=flat-square)](benchmarks/README.md)
+[![100% 本地优先](https://img.shields.io/badge/100%25-本地优先-6366f1?style=flat-square)](#architecture)
+[![MCP 热重载](https://img.shields.io/badge/MCP-零停机热重载-f59e0b?style=flat-square)](host-adapter)
 
-### **本地优先、可审计的 AI 个人记忆、五维条件偏好与 Agent 经验控制面**
+### **真正能进生产的本地优先 AI 记忆操作系统 — 94.6% PersonaMem-32K · 164ms 极速召回 · 零云端锁定**
 
-**告别每次换 AI 工具都要重新交代项目背景、写作习惯和踩坑历史。**<br/>
-*一套本地记忆大脑，跨 Claude Code、Claude Desktop、OpenAI Codex、Antigravity、Trae、WorkBuddy 与豆包协作无缝共享。*
+**给你电脑里所有 AI 装上同一个永久、可溯源的本地大脑。**<br/>
+*彻底告别每次在 Claude Code、Claude Desktop、OpenAI Codex、Antigravity、Trae、WorkBuddy 与豆包协作之间切换时，都要重新交代项目背景、写作习惯和踩坑历史的噩梦。*
+
+> **为什么重度 AI 开发者用一次就回不去：** PersonaMem-32K 严格盲测 **94.6% (35/37)**（领先主流记忆系统公开成绩 **+8.0 个百分点**，4 项核心能力 **100% 满分**）· LongMemEval-S **91.7% (11/12)** · 中位召回仅 **164.5 ms** · **100% 原文溯源防幻觉** · 经 **75,000+ 真实生产记忆**压测，向量索引体积直降 **52.7%**。([全部可复现脚本与原始战报 →](benchmarks/README.md))
 
 [English](README.md) · [快速开始](#ep-quick-start) · [五维条件偏好](#five-dimensional-preferences) · [7.5 万条实测数据](#production-proven-at-75k-units) · [系统架构](#architecture) · [完整技术详版](docs/DEEP-DIVE-中文.md)
 
@@ -21,15 +24,19 @@
 
 </div>
 
+### 🎬 68 秒官方发布视频（中文旁白 + 同步字幕，点击直接在线播放，无需下载）
+
+https://github.com/user-attachments/assets/1ef760e7-e7a1-4a54-9ada-3913cb558b13
+
 ---
 
 ## 为什么需要 Evolving Profile？
 
 大多数 AI 记忆工具只停留在“把聊天记录扔进向量库再做 Top-K 检索”。一旦你每天在多个 AI 宿主里高强度工作，扁平向量记忆很快就会崩坏：偏好互相打架、助手没经证实的猜测污染后续召回、向量索引越滚越大、从 Claude 切到 Codex 又一切清零。
 
-**Evolving Profile（EP）** 基于 [Hindsight](https://github.com/vectorize-io/hindsight) 构建，将其升级为一套**完整、可观测、本地优先的个人记忆与 Agent 经验操作系统**：
+**Evolving Profile（EP）** 是一套从真实高强度生产痛点中重构诞生的**独立、可观测、本地优先的 AI 记忆与行为操作系统**：
 
-| 核心能力 | 宿主原生记忆 | 原版向量库 / Hindsight | **Evolving Profile 6.2** |
+| 核心能力 | 宿主原生记忆 | 常规向量 RAG / 云端记忆 | **Evolving Profile 6.2** |
 | :--- | :---: | :---: | :---: |
 | **跨宿主共享大脑**（Claude / Codex / Antigravity / Trae…） | 锁定单一宿主 | 仅提供 SDK / API | **原生 Hook、转录适配器与受控 MCP 全打通** |
 | **个人偏好建模** | 扁平文字条 | 混在普通事实里 | **五维条件偏好 + `hard_guardrail` 强制分级 + 不可变修订契约** |
@@ -123,7 +130,7 @@ flowchart LR
         DAEMON["纯 Python 调度器 (:12096)<br/>13 后台任务 · 热温分级 · 日志归档"]
     end
 
-    subgraph Storage["Hindsight 引擎底座 + Postgres 18 / pgvector 0.8"]
+    subgraph Storage["EP 存储引擎 (PostgreSQL 18 + pgvector 0.8 halfvec)"]
         API["Memory API (:8888)<br/>Retain · Recall · Reflect"]
         DB["PostgreSQL + halfvec HNSW<br/>用户事实 · 双时态状态 · Agent 经验 · 温层归档"]
     end
@@ -218,9 +225,9 @@ node --env-file=.env console/bin/cli.js --hostname 127.0.0.1 --port 9999 --api-u
 
 ---
 
-## 基于 Hindsight 构建
+## 开源协议与致谢
 
-**Evolving Profile 基于 [Hindsight](https://github.com/vectorize-io/hindsight)（MIT 协议）开发。** Hindsight 提供底层记忆存储与检索引擎，EP 在此之上构建了独立治理的多宿主控制面、五维条件偏好引擎、可复用 Agent 经验平面、7.5 万条级存储治理与可视化控制台。完整致谢与协议条款见 [NOTICE.md](NOTICE.md) 与 [LICENSE](LICENSE)。
+本项目基于 [MIT 协议](LICENSE) 开源。早期存储原型参考了 MIT 协议上游开源实现，完整版权声明与第三方致谢见 [NOTICE.md](NOTICE.md)。
 
 <div align="center">
 如果 Evolving Profile 帮你彻底告别了向 AI 反复重复背景的痛苦，欢迎点一颗 ⭐ Star 支持！

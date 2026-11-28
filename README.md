@@ -4,14 +4,17 @@
 
 [![Version](https://img.shields.io/badge/version-6.2.2-0ea5e9?style=flat-square)](VERSION)
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%2B-3b82f6?style=flat-square)](api/pyproject.toml)
-[![Built on Hindsight](https://img.shields.io/badge/built%20on-Hindsight-8b5cf6?style=flat-square)](https://github.com/vectorize-io/hindsight)
+[![PersonaMem-32K](https://img.shields.io/badge/PersonaMem--32K-94.6%25-10b981?style=flat-square)](benchmarks/README.md)
+[![LongMemEval-S](https://img.shields.io/badge/LongMemEval--S-91.7%25-06b6d4?style=flat-square)](benchmarks/README.md)
+[![100% Local-First](https://img.shields.io/badge/100%25-Local--First-6366f1?style=flat-square)](#architecture)
 [![MCP Ready](https://img.shields.io/badge/MCP-Live%20Reload-f59e0b?style=flat-square)](host-adapter)
 
-### **Local-First Memory, 5D Conditional Preferences & Agent Experience Control Plane**
+### **The Local-First AI Memory Operating System — 94.6% PersonaMem-32K · 164ms Recall · Zero Cloud Lock-In**
 
-**Stop re-explaining your projects, preferences, and past fixes every time you switch AI agents.**<br/>
-*One local, source-audited brain shared across Claude Code, Claude Desktop, OpenAI Codex, Antigravity, Trae, WorkBuddy & Doubao Work.*
+**Give every AI agent on your machine one permanent, source-audited brain.**<br/>
+*Stop re-explaining your projects, coding standards, preferences, and past fixes every time you switch between Claude Code, Claude Desktop, OpenAI Codex, Antigravity, Trae, WorkBuddy & Doubao Work.*
+
+> **Why developers switch to EP on day one:** **94.6% (35/37)** on PersonaMem-32K (**+8.0 pts** over Hindsight's published 86.6%, with **100%** across 4 core categories) · **91.7% (11/12)** on LongMemEval-S · **164.5 ms** median recall · **100% original-source attribution** · battle-tested on **75,000+ real production memories** with **-52.7%** smaller vector indexes. ([Reproduce every number →](benchmarks/README.md))
 
 [简体中文](README-中文.md) · [Quick Start](#ep-quick-start) · [5D Preferences](#five-dimensional-preferences) · [75K Scale Benchmarks](#production-proven-at-75k-units) · [Architecture](#architecture) · [Deep Dive](docs/DEEP-DIVE.md)
 
@@ -21,15 +24,19 @@
 
 </div>
 
+### 🎬 Watch the 68-Second Launch Video (Narrated + Subtitled, Plays Inline)
+
+https://github.com/user-attachments/assets/1ef760e7-e7a1-4a54-9ada-3913cb558b13
+
 ---
 
 ## Why Evolving Profile?
 
 Most AI memory tools stop at dumping flat text snippets into a vector database. When you actually use AI coding and research agents every day across multiple hosts, flat memory breaks down fast: preferences contradict each other, unconfirmed assistant hallucinations pollute future recalls, vector indexes bloat, and switching from Claude to Codex means starting from scratch.
 
-**Evolving Profile (EP)** is built on top of [Hindsight](https://github.com/vectorize-io/hindsight) and turns it into a **complete, observable, local-first memory operating system**:
+**Evolving Profile (EP)** is an **independent, observable, local-first AI Memory Operating System** engineered from production pain points:
 
-| Capability | Native Host Memory | Vanilla Vector / Hindsight | **Evolving Profile 6.2** |
+| Capability | Native Host Memory | Generic Vector RAG / Cloud Memory | **Evolving Profile 6.2** |
 | :--- | :---: | :---: | :---: |
 | **Cross-host shared memory** (Claude, Codex, Antigravity, Trae…) | Locked to 1 host | SDK / API only | **Native hooks, transcript adapters & MCP** |
 | **User preferences** | Flat text notes | Unstructured facts | **5D conditional preferences + `hard_guardrail` enforcement + immutable revisions** |
@@ -123,7 +130,7 @@ flowchart LR
         DAEMON["Pure-Python Daemon (:12096)<br/>13 Jobs · Tiering · Retention · Hygiene"]
     end
 
-    subgraph Storage["Hindsight Foundation + Postgres 18 / pgvector 0.8"]
+    subgraph Storage["EP Storage Engine (PostgreSQL 18 + pgvector 0.8 halfvec)"]
         API["Memory API (:8888)<br/>Retain · Recall · Reflect"]
         DB["PostgreSQL + halfvec HNSW<br/>User Facts · Entity State · Agent Experience · Warm Archive"]
     end
@@ -218,9 +225,9 @@ Full per-host checklists: **[docs/AGENT-SETUP.md](docs/AGENT-SETUP.md)** · Day-
 
 ---
 
-## Built on Hindsight
+## License & Acknowledgments
 
-**Evolving Profile is built on top of [Hindsight](https://github.com/vectorize-io/hindsight)** (MIT License). Hindsight provides the upstream memory foundation; EP adds the independently governed multi-host control plane, 5D conditional preference engine, reusable agent experience plane, storage governance, and observable Web Console. Full credits and license terms are in [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
+Released under the [MIT License](LICENSE). Early storage primitives originated from MIT-licensed upstream work; full attribution and third-party notices are preserved in [NOTICE.md](NOTICE.md).
 
 <div align="center">
 If Evolving Profile saves you from repeating yourself to AI agents, consider giving it a ⭐ on GitHub!
