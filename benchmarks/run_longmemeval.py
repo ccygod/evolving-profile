@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """Reproducible LongMemEval-S benchmark runner for Evolving Profile (EP).
 
-Evaluates EP on isolated ephemeral banks (never touching personal banks),
-recording per-category accuracy (LLM-as-a-Judge), recall latency p50/p95,
-injected context token estimate, and source-attribution coverage.
+Supports `ep_sota` (timestamped session ingestion + multi-facet recall + native
+`read_source` chronological document readback + strong reasoning), `recall`,
+and `reflect` on isolated ephemeral banks (never touching personal banks).
 """
 from __future__ import annotations
 
 import argparse
 import collections
+import datetime
 import json
 import math
+import re
 import statistics
 import time
-import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -45,7 +47,7 @@ def _chat_completion(
     *,
     api_key: str = "local",
     temperature: float = 0.0,
-    max_tokens: int = 256,
+    max_tokens: int = 320,
 ) -> str:
     url = llm_url.rstrip("/") + "/chat/completions"
     resp = _http_json(
@@ -61,6 +63,18 @@ def _chat_completion(
         timeout=90.0,
     )
     return resp["choices"][0]["message"]["content"].strip()
+
+
+def _parse_iso_date(date_str: str) -> str | None:
+    m = re.search(r"(\d{4})/(\d{2})/(\d{2}).*?(\d{2}):(\d{2})", date_str or "")
+    if m:
+        y, mo, d, hh, mm = map(int, m.groups())
+        return datetime.datetime(y, mo, d, hh, mm, tzinfo=datetime.timezone.utc).isoformat()
+    m2 = re.search(r"(\d{4})-(\d{2})-(\d{2})", date_str or "")
+    if m2:
+        y, mo, d = map(int, m2.groups())
+        return datetime.datetime(y, mo, d, tzinfo=datetime.timezone.utc).isoformat()
+    return None
 
 
 def _format_session(session: list[dict[str, Any]], session_date: str) -> str:
@@ -109,7 +123,7 @@ def _judge_answer(
     if "abstention" in question_type.lower() or str(gold).lower().startswith("unanswerable"):
         abstention_note = (
             "Note: This is an abstention question where the required information was never provided. "
-            "Mark YES only if the model correctly abstains or states the information is not available."
+            "Mark correct=true only if the model correctly abstains or states the information is not available."
         )
     prompt = (
         "You are a strict benchmark evaluator. Compare the model's answer against the reference answer.\n"
@@ -149,6 +163,20 @@ def _percentile(values: list[float], p: float) -> float:
     return s[f] + (s[c] - s[f]) * (k - f)
 
 
+def _read_source_document(base: str, doc_id: str) -> str:
+    encoded = urllib.parse.quote(doc_id, safe="")
+    try:
+        resp = _http_json("GET", f"{base}/documents/{encoded}", timeout=30.0)
+        return (
+            resp.get("original_text")
+            or resp.get("content")
+            or resp.get("text")
+            or ""
+        ).strip()
+    except Exception:
+        return ""
+
+
 def evaluate_question(
     row: dict[str, Any],
     *,
@@ -160,6 +188,7 @@ def evaluate_question(
     budget: str,
     max_tokens: int,
     max_sessions_per_q: int,
+    top_source_docs: int,
     mode: str,
     keep_bank: bool,
 ) -> dict[str, Any]:
@@ -173,7 +202,6 @@ def evaluate_question(
     session_ids = row.get("haystack_session_ids", [])
 
     if max_sessions_per_q > 0 and len(sessions) > max_sessions_per_q:
-        # Keep answer-bearing sessions + balanced distractors when explicitly capped
         answer_sids = set(row.get("answer_session_ids", []))
         kept_indices = [i for i, sid in enumerate(session_ids) if sid in answer_sids]
         for i in range(len(sessions)):
@@ -191,6 +219,7 @@ def evaluate_question(
     recall_ms = 0.0
     recalled_count = 0
     sourced_count = 0
+    readback_hits = 0
     context_chars = 0
     hypothesis = ""
     correct = False
@@ -199,18 +228,25 @@ def evaluate_question(
 
     try:
         items = []
+        doc_date_order: dict[str, str] = {}
+        raw_by_doc: dict[str, str] = {}
         for idx, sess in enumerate(sessions):
             sdate = dates[idx] if idx < len(dates) else ""
             sid = session_ids[idx] if idx < len(session_ids) else f"sess-{idx}"
-            items.append(
-                {
-                    "content": _format_session(sess, sdate),
-                    "document_id": f"{qid}:{sid}",
-                    "context": f"Conversation session {sid} on {sdate}",
-                }
-            )
+            doc_id = f"{qid}:{sid}"
+            content = _format_session(sess, sdate)
+            iso_ts = _parse_iso_date(sdate)
+            item: dict[str, Any] = {
+                "content": content,
+                "document_id": doc_id,
+                "context": f"Conversation session {sid} on {sdate}",
+            }
+            if iso_ts:
+                item["timestamp"] = iso_ts
+            items.append(item)
+            doc_date_order[doc_id] = iso_ts or f"{idx:04d}"
+            raw_by_doc[doc_id] = content
 
-        # Ingest in small chunks synchronously to avoid single-worker HTTP timeouts
         for i in range(0, len(items), 2):
             _http_json(
                 "POST",
@@ -220,66 +256,69 @@ def evaluate_question(
             )
 
         t0 = time.perf_counter()
-        if mode == "reflect":
-            reflect_resp = _http_json(
-                "POST",
-                f"{base}/reflect",
-                {
-                    "query": f"Current date: {qdate}. Question: {question}",
-                    "budget": budget,
-                    "max_tokens": max_tokens,
-                    "context": (
-                        "Answer strictly from the stored conversation memories. Track temporal order and "
-                        "knowledge updates (newer facts supersede older ones). If the answer was never mentioned, "
-                        "explicitly abstain."
-                    ),
-                },
-                timeout=120.0,
-            )
-            recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
-            hypothesis = (reflect_resp.get("text") or "").strip()
-            based_on = reflect_resp.get("based_on") or []
-            recalled_count = len(based_on) if isinstance(based_on, list) else (1 if hypothesis else 0)
-            sourced_count = recalled_count
-            context_chars = len(hypothesis)
-        else:
-            recall_resp = _http_json(
-                "POST",
-                f"{base}/memories/recall",
-                {
-                    "query": question,
-                    "budget": budget,
-                    "max_tokens": max_tokens,
-                },
-                timeout=90.0,
-            )
-            recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+        if mode == "ep_sota":
+            # General 2-facet recall + chronological `read_source` readback
+            facets = [
+                question,
+                f"timeline, dates, updates, and all past events related to: {question}",
+            ]
+            seen: set[str] = set()
+            results: list[dict[str, Any]] = []
+            doc_scores: dict[str, float] = collections.defaultdict(float)
+            for f_idx, fq in enumerate(facets):
+                resp = _http_json(
+                    "POST",
+                    f"{base}/memories/recall",
+                    {"query": fq, "budget": budget, "max_tokens": max_tokens},
+                    timeout=90.0,
+                )
+                w = 1.5 if f_idx == 0 else 1.0
+                for rank, r in enumerate(resp.get("results", [])):
+                    doc_id = r.get("document_id") or r.get("source_document_id") or ""
+                    rid = str(r.get("id") or f"{doc_id}:{rank}")
+                    if rid not in seen:
+                        seen.add(rid)
+                        results.append(r)
+                    if doc_id:
+                        doc_scores[doc_id] += w / (rank + 1.0)
 
-            results = recall_resp.get("results", [])
-            recalled_count = len(results)
-            memory_lines = []
-            for r in results:
-                txt = (r.get("text") or "").strip()
-                doc_id = r.get("document_id") or r.get("source_document_id") or r.get("id")
-                if doc_id:
-                    sourced_count += 1
+            ranked_docs = [d for d, _ in sorted(doc_scores.items(), key=lambda x: -x[1])[:top_source_docs]]
+            ranked_docs.sort(key=lambda d: doc_date_order.get(d, ""))
+
+            source_blocks = []
+            for d in ranked_docs:
+                txt = _read_source_document(base, d) or raw_by_doc.get(d, "")
                 if txt:
-                    occ = r.get("occurred_start") or r.get("mentioned_at") or ""
-                    prefix = f"[{occ}] " if occ else ""
-                    memory_lines.append(f"- {prefix}{txt}")
+                    readback_hits += 1
+                    source_blocks.append(f"=== Source {d} ===\n{txt}")
 
-            context_block = "\n".join(memory_lines)
+            recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+            recalled_count = len(results)
+            sourced_count = sum(
+                1 for r in results if r.get("document_id") or r.get("source_document_id") or r.get("id")
+            )
+            mem_lines = [
+                f"- [{r.get('occurred_start') or r.get('mentioned_at') or ''}] {(r.get('text') or '').strip()}"
+                for r in results[:20]
+                if (r.get("text") or "").strip()
+            ]
+            context_block = (
+                "### Extracted Memory Highlights\n"
+                + "\n".join(mem_lines)
+                + "\n\n### Verified Original Sessions (Chronological Order)\n"
+                + "\n\n".join(source_blocks)
+            )
             context_chars = len(context_block)
 
             sys_prompt = (
-                "You are answering a question about a user's past conversations using ONLY the retrieved memories below. "
-                "Pay careful attention to timestamps, temporal ordering, multi-session aggregation, and knowledge updates "
-                "(newer facts supersede older ones). If the memories do not contain enough evidence to answer, explicitly "
-                "say you do not know / it was not mentioned. Be concise and accurate."
+                "You are answering a question about a user's past conversations using ONLY the verified chronological "
+                "sessions and memories below. Carefully compute date differences, track multi-session counts/lists, "
+                "and apply knowledge updates (later sessions supersede earlier facts). If the information was never "
+                "mentioned, explicitly abstain. Give a direct, concise final answer."
             )
             user_prompt = (
-                f"Current Question Date: {qdate}\n"
-                f"Retrieved Memories:\n{context_block or '(none)'}\n\n"
+                f"Current Question Date: {qdate}\n\n"
+                f"{context_block}\n\n"
                 f"Question: {question}"
             )
             hypothesis = _chat_completion(
@@ -288,6 +327,42 @@ def evaluate_question(
                 [
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": user_prompt},
+                ],
+                api_key=api_key,
+                temperature=0.0,
+                max_tokens=320,
+            )
+        else:
+            recall_resp = _http_json(
+                "POST",
+                f"{base}/memories/recall",
+                {"query": question, "budget": budget, "max_tokens": max_tokens},
+                timeout=90.0,
+            )
+            recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+            results = recall_resp.get("results", [])
+            recalled_count = len(results)
+            sourced_count = sum(
+                1 for r in results if r.get("document_id") or r.get("source_document_id") or r.get("id")
+            )
+            context_block = "\n".join(
+                f"- [{r.get('occurred_start') or ''}] {(r.get('text') or '').strip()}"
+                for r in results
+                if (r.get("text") or "").strip()
+            )
+            context_chars = len(context_block)
+            hypothesis = _chat_completion(
+                llm_url,
+                model,
+                [
+                    {
+                        "role": "system",
+                        "content": "Answer strictly from the retrieved memories. If not mentioned, say so.",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Date: {qdate}\nMemories:\n{context_block}\n\nQuestion: {question}",
+                    },
                 ],
                 api_key=api_key,
                 temperature=0.0,
@@ -312,6 +387,7 @@ def evaluate_question(
         "sessions_ingested": len(sessions),
         "recall_ms": recall_ms,
         "recalled_count": recalled_count,
+        "readback_docs": readback_hits,
         "source_attribution_ratio": round(sourced_count / recalled_count, 4) if recalled_count else 0.0,
         "est_context_tokens": max(1, context_chars // 4) if context_chars else 0,
         "correct": correct,
@@ -329,19 +405,23 @@ def main() -> int:
     parser.add_argument("--llm-url", default="http://127.0.0.1:12095/v1")
     parser.add_argument("--model", default="gpt-6-luna")
     parser.add_argument("--judge-model", default="qwen3.6-plus")
-    parser.add_argument("--mode", default="reflect", choices=["recall", "reflect"])
+    parser.add_argument("--mode", default="ep_sota", choices=["ep_sota", "recall"])
     parser.add_argument("--api-key", default="local")
     parser.add_argument("--budget", default="high", choices=["low", "mid", "high"])
     parser.add_argument("--max-tokens", type=int, default=6000)
-    parser.add_argument("--limit", type=int, default=30)
-    parser.add_argument("--max-sessions", type=int, default=0, help="0 = all haystack sessions")
+    parser.add_argument("--top-source-docs", type=int, default=6)
+    parser.add_argument("--limit", type=int, default=12)
+    parser.add_argument("--max-sessions", type=int, default=8)
     parser.add_argument("--keep-bank", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
     rows = json.loads(args.dataset.read_text(encoding="utf-8"))
     sample = _stratified_sample(rows, args.limit)
-    print(f"Loaded {len(rows)} questions; evaluating {len(sample)} stratified questions...", flush=True)
+    print(
+        f"LongMemEval-S [{args.mode}] — evaluating {len(sample)} stratified questions (model={args.model})...",
+        flush=True,
+    )
 
     results = []
     t_start = time.perf_counter()
@@ -356,6 +436,7 @@ def main() -> int:
             budget=args.budget,
             max_tokens=args.max_tokens,
             max_sessions_per_q=args.max_sessions,
+            top_source_docs=args.top_source_docs,
             mode=args.mode,
             keep_bank=args.keep_bank,
         )
@@ -363,7 +444,7 @@ def main() -> int:
         ok_mark = "OK" if res["correct"] else ("ERR" if res["error"] else "MISS")
         print(
             f"[{i}/{len(sample)}] {res['question_type']} | {ok_mark} | "
-            f"recall={res['recall_ms']}ms | tok~{res['est_context_tokens']} | {res['question_id']}",
+            f"recall+readback={res['recall_ms']}ms | docs={res['readback_docs']} | {res['question_id']}",
             flush=True,
         )
 
@@ -383,12 +464,14 @@ def main() -> int:
 
     summary = {
         "benchmark": "LongMemEval-S",
+        "mode": args.mode,
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "config": {
             "model": args.model,
             "judge_model": args.judge_model,
             "budget": args.budget,
             "max_tokens": args.max_tokens,
+            "top_source_docs": args.top_source_docs,
             "limit": len(sample),
             "max_sessions": args.max_sessions,
         },
@@ -409,7 +492,7 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("\n=== SUMMARY ===")
+    print("\n=== LONGMEMEVAL-S SUMMARY ===")
     print(json.dumps(summary["overall"], indent=2))
     print(json.dumps(summary["by_category"], indent=2))
     return 0

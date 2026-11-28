@@ -1,0 +1,239 @@
+{
+  "benchmark": "LongMemEval-S",
+  "mode": "ep_sota",
+  "at": "2026-11-28T11:48:49Z",
+  "config": {
+    "model": "gpt-6-luna",
+    "judge_model": "qwen3.6-plus",
+    "budget": "high",
+    "max_tokens": 6000,
+    "top_source_docs": 6,
+    "limit": 12,
+    "max_sessions": 8
+  },
+  "overall": {
+    "evaluated": 12,
+    "errors": 0,
+    "correct": 11,
+    "accuracy": 0.9167,
+    "recall_p50_ms": 102.5,
+    "recall_p95_ms": 142.9,
+    "mean_context_tokens": 23850.8,
+    "mean_source_attribution": 1.0,
+    "elapsed_sec": 1532.3
+  },
+  "by_category": {
+    "knowledge-update": {
+      "correct": 2,
+      "total": 2,
+      "accuracy": 1.0
+    },
+    "multi-session": {
+      "correct": 1,
+      "total": 2,
+      "accuracy": 0.5
+    },
+    "single-session-assistant": {
+      "correct": 2,
+      "total": 2,
+      "accuracy": 1.0
+    },
+    "single-session-preference": {
+      "correct": 2,
+      "total": 2,
+      "accuracy": 1.0
+    },
+    "single-session-user": {
+      "correct": 2,
+      "total": 2,
+      "accuracy": 1.0
+    },
+    "temporal-reasoning": {
+      "correct": 2,
+      "total": 2,
+      "accuracy": 1.0
+    }
+  },
+  "results": [
+    {
+      "question_id": "6a1eabeb",
+      "question_type": "knowledge-update",
+      "sessions_ingested": 8,
+      "recall_ms": 125.7,
+      "recalled_count": 13,
+      "readback_docs": 6,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 33168,
+      "correct": true,
+      "reason": "The model's answer exactly matches the reference answer of 25:50.",
+      "hypothesis": "Based on your past conversations, your personal best time for the charity 5K run is **25:50**.",
+      "gold": "25 minutes and 50 seconds (or 25:50)",
+      "error": null
+    },
+    {
+      "question_id": "0a995998",
+      "question_type": "multi-session",
+      "sessions_ingested": 8,
+      "recall_ms": 95.7,
+      "recalled_count": 10,
+      "readback_docs": 3,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 17342,
+      "correct": false,
+      "reason": "The model states 2 items, which contradicts the reference answer of 3.",
+      "hypothesis": "Based on your past conversations, you need to pick up **2 items**: a new pair of boots from Zara and your navy blue blazer from dry cleaning. No other returns or pickups were specified.",
+      "gold": "3",
+      "error": null
+    },
+    {
+      "question_id": "7161e7e2",
+      "question_type": "single-session-assistant",
+      "sessions_ingested": 8,
+      "recall_ms": 141.2,
+      "recalled_count": 10,
+      "readback_docs": 4,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 17122,
+      "correct": true,
+      "reason": "The model accurately states that Admon was scheduled for the 8 am – 4 pm (Day Shift) on Sunday, which exactly matches the reference answer.",
+      "hypothesis": "Based on the final shift rotation sheet we created, Admon was scheduled for the **8 am – 4 pm (Day Shift)** on Sunday.",
+      "gold": "Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.",
+      "error": null
+    },
+    {
+      "question_id": "8a2466db",
+      "question_type": "single-session-preference",
+      "sessions_ingested": 8,
+      "recall_ms": 103.9,
+      "recalled_count": 9,
+      "readback_docs": 5,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 29187,
+      "correct": true,
+      "reason": "The model correctly identifies and adheres to the reference answer's constraint by focusing exclusively on Adobe Premiere Pro-specific resources, avoiding unrelated software or overly generic advice.",
+      "hypothesis": "Based on our previous conversation about Adobe Premiere Pro, here are the recommended resources to learn more about video editing:\n\n• Adobe Premiere Pro's official documentation and tutorials  \n• YouTube channels like Premiere Bro, Video Copilot, and Adobe Creative Cloud  \n• Online courses on platforms like Udemy, LinkedIn Learning, and Skillshare  \n• Communities and forums, such as Reddit's r/premierepro and Adobe's Premiere Pro forum  \n\nThese resources cover foundational to advanced techniques, including color grading, proxy workflows, and multi-camera editing. Let me know if you need help prioritizing where to start!",
+      "gold": "The user would prefer responses that suggest resources specifically tailored to Adobe Premiere Pro, especially those that delve into its advanced settings. They might not prefer general video editing resources or resources related to other video editing software.",
+      "error": null
+    },
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "sessions_ingested": 8,
+      "recall_ms": 100.3,
+      "recalled_count": 12,
+      "readback_docs": 6,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 23871,
+      "correct": true,
+      "reason": "The model correctly identifies the degree as Business Administration, matching the reference answer.",
+      "hypothesis": "You graduated with a degree in Business Administration.",
+      "gold": "Business Administration",
+      "error": null
+    },
+    {
+      "question_id": "gpt4_59149c77",
+      "question_type": "temporal-reasoning",
+      "sessions_ingested": 8,
+      "recall_ms": 145.0,
+      "recalled_count": 8,
+      "readback_docs": 5,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 30411,
+      "correct": true,
+      "reason": "The model's answer matches the reference answer exactly, stating 7 days.",
+      "hypothesis": "Exactly 7 days passed between your visit to MoMA (January 8, 2023) and the \"Ancient Civilizations\" exhibit at the Metropolitan Museum of Art (January 15, 2023).",
+      "gold": "7 days. 8 days (including the last day) is also acceptable.",
+      "error": null
+    },
+    {
+      "question_id": "6aeb4375",
+      "question_type": "knowledge-update",
+      "sessions_ingested": 8,
+      "recall_ms": 76.2,
+      "recalled_count": 8,
+      "readback_docs": 4,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 19058,
+      "correct": true,
+      "reason": "The model correctly states that the user has tried four Korean restaurants, which exactly matches the reference answer.",
+      "hypothesis": "Based on your most recent conversation on September 30, you have tried **four** Korean restaurants in your city (this supersedes an earlier mention of three from August 11).",
+      "gold": "four",
+      "error": null
+    },
+    {
+      "question_id": "6d550036",
+      "question_type": "multi-session",
+      "sessions_ingested": 8,
+      "recall_ms": 102.1,
+      "recalled_count": 11,
+      "readback_docs": 6,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 29838,
+      "correct": true,
+      "reason": "The model correctly identifies the number of projects as 2, matching the reference answer.",
+      "hypothesis": "2. You mentioned leading the data analysis team for your Marketing Research class project and are currently working on a solo project for your Data Mining class.",
+      "gold": "2",
+      "error": null
+    },
+    {
+      "question_id": "c4f10528",
+      "question_type": "single-session-assistant",
+      "sessions_ingested": 8,
+      "recall_ms": 96.4,
+      "recalled_count": 9,
+      "readback_docs": 4,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 15911,
+      "correct": true,
+      "reason": "The model correctly identifies the restaurant as Miss Bee Providore, which exactly matches the reference answer.",
+      "hypothesis": "The restaurant you're referring to is **Miss Bee Providore**. It's located near Cihampelas Walk and is known for its signature \"Miss Bee's Nasi Goreng.\" Enjoy your trip back to Bandung!",
+      "gold": "Miss Bee Providore",
+      "error": null
+    },
+    {
+      "question_id": "06878be2",
+      "question_type": "single-session-preference",
+      "sessions_ingested": 8,
+      "recall_ms": 91.7,
+      "recalled_count": 9,
+      "readback_docs": 5,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 24773,
+      "correct": true,
+      "reason": "The model accurately suggests high-quality, Sony-compatible accessories tailored to the specified camera setup, directly aligning with the reference answer's constraints and preferences.",
+      "hypothesis": "Based on your established setup (Sony A7R IV, Sony 24-70mm f/2.8, Godox V1 flash, Gitzo GT3543LS tripod, and external battery packs), here are essential accessories to complement your kit:\n\n1. **UHS-II SD Cards**: Required for the A7R IV's high-resolution files and fast burst shooting speeds.\n2. **70mm UV/CPL Filters**: Protects your 24-70mm lens front element and enhances contrast/polarization for outdoor shoots.\n3. **Extra NP-FZ100 Batteries**: Complements your external power bank strategy by enabling quick swaps during active sessions.\n4. **Padded Camera Strap**: Pairs well with your planned camera bag upgrade for secure, ergonomic carrying when not using the tripod.\n5. **Lens Hood & Front Cap**: Often sold separately; critical for reducing lens flare and protecting the 24-70mm glass.\n\nThese items will maximize the performance, reliability, and longevity of your current gear. Let me know if you need specific brand recommendations or compatibility checks for any of these!",
+      "gold": "The user would prefer suggestions of Sony-compatible accessories or high-quality photography gear that can enhance their photography experience. They may not prefer suggestions of other brands' equipment or low-quality gear.",
+      "error": null
+    },
+    {
+      "question_id": "118b2229",
+      "question_type": "single-session-user",
+      "sessions_ingested": 8,
+      "recall_ms": 103.0,
+      "recalled_count": 12,
+      "readback_docs": 6,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 26272,
+      "correct": true,
+      "reason": "The model's answer exactly matches the reference answer's core information (45 minutes each way).",
+      "hypothesis": "Based on your past conversations, your daily commute is **45 minutes each way**.",
+      "gold": "45 minutes each way",
+      "error": null
+    },
+    {
+      "question_id": "gpt4_f49edff3",
+      "question_type": "temporal-reasoning",
+      "sessions_ingested": 8,
+      "recall_ms": 125.8,
+      "recalled_count": 8,
+      "readback_docs": 5,
+      "source_attribution_ratio": 1.0,
+      "est_context_tokens": 19257,
+      "correct": true,
+      "reason": "The model correctly lists the three events in the exact chronological order specified in the reference answer.",
+      "hypothesis": "Based on your conversation history, here is the chronological order of the events:\n\n1. **Helping your friend prepare the nursery** (February 5, 2023)\n2. **Helping your cousin pick out baby shower items** (February 10, 2023)\n3. **Ordering the customized phone case** (February 20, 2023)",
+      "gold": "First, I helped my friend prepare the nursery, then I helped my cousin pick out stuff for her baby shower, and lastly, I ordered a customized phone case for my friend's birthday.",
+      "error": null
+    }
+  ]
+}

@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """Reproducible PersonaMem-32K benchmark runner for Evolving Profile (EP).
 
-Evaluates EP on isolated ephemeral banks per shared_context_id (never touching
-personal banks), recording exact-match multiple-choice accuracy by question_type,
-recall latency p50/p95, injected context token estimate, and source attribution.
+Supports two evaluation modes on isolated ephemeral banks (never touching
+personal banks):
+  - `recall`: baseline single-query `/memories/recall`
+  - `ep_sota`: EP full-stack general pipeline — fine-grained timestamped
+    ingestion, multi-facet recall, causal-time scoping, and native
+    `read_source` (`/documents/{document_id}`) chronological readback.
 """
 from __future__ import annotations
 
-import ast
 import argparse
+import ast
 import collections
 import csv
+import datetime
 import json
 import math
 import re
 import statistics
 import time
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -47,7 +52,7 @@ def _chat_completion(
     *,
     api_key: str = "local",
     temperature: float = 0.0,
-    max_tokens: int = 32,
+    max_tokens: int = 320,
 ) -> str:
     url = llm_url.rstrip("/") + "/chat/completions"
     resp = _http_json(
@@ -78,30 +83,79 @@ def _percentile(values: list[float], p: float) -> float:
 
 
 def _extract_choice(text: str) -> str:
-    m = re.search(r"\(([a-dA-D])\)", text)
-    if m:
-        return f"({m.group(1).lower()})"
-    m2 = re.search(r"\b([a-dA-D])\b", text)
+    matches = re.findall(r"\(([a-dA-D])\)", text)
+    if matches:
+        return f"({matches[-1].lower()})"
+    m2 = re.findall(r"\b([a-dA-D])\b", text)
     if m2:
-        return f"({m2.group(1).lower()})"
+        return f"({m2[-1].lower()})"
     return text.strip().lower()[:8]
 
 
-def _chunk_messages(messages: list[dict[str, Any]], chunk_turns: int = 12) -> list[str]:
-    chunks = []
-    cur = []
-    for m in messages:
+def _chunk_messages_with_spans(
+    messages: list[dict[str, Any]], chunk_turns: int = 6
+) -> list[dict[str, Any]]:
+    """Split dialogue into fine-grained, causally ordered turn blocks."""
+    blocks: list[dict[str, Any]] = []
+    base_dt = datetime.datetime(2026, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    cur_lines: list[str] = []
+    start_idx = 0
+    for idx, m in enumerate(messages):
         role = m.get("role", "user")
         content = (m.get("content") or "").strip()
         if not content:
             continue
-        cur.append(f"{role.capitalize()}: {content}")
-        if len(cur) >= chunk_turns:
-            chunks.append("\n".join(cur))
-            cur = []
-    if cur:
-        chunks.append("\n".join(cur))
-    return chunks
+        if not cur_lines:
+            start_idx = idx
+        cur_lines.append(f"[Turn {idx}] {role.capitalize()}: {content}")
+        # Always keep initial system persona block standalone, then chunk every `chunk_turns`
+        if (idx == 0 and role == "system") or len(cur_lines) >= chunk_turns:
+            ts = (base_dt + datetime.timedelta(hours=idx)).isoformat()
+            blocks.append(
+                {
+                    "start_idx": start_idx,
+                    "end_idx": idx,
+                    "timestamp": ts,
+                    "content": "\n".join(cur_lines),
+                }
+            )
+            cur_lines = []
+    if cur_lines:
+        last_idx = len(messages) - 1
+        ts = (base_dt + datetime.timedelta(hours=last_idx)).isoformat()
+        blocks.append(
+            {
+                "start_idx": start_idx,
+                "end_idx": last_idx,
+                "timestamp": ts,
+                "content": "\n".join(cur_lines),
+            }
+        )
+    return blocks
+
+
+def _doc_end_turn(doc_id: str) -> int:
+    m = re.search(r":t(\d+)-(\d+)$", doc_id or "")
+    return int(m.group(2)) if m else 0
+
+
+def _read_source_document(base: str, doc_id: str, cache: dict[str, str]) -> str:
+    if doc_id in cache:
+        return cache[doc_id]
+    encoded = urllib.parse.quote(doc_id, safe="")
+    try:
+        resp = _http_json("GET", f"{base}/documents/{encoded}", timeout=30.0)
+        text = (
+            resp.get("original_text")
+            or resp.get("content")
+            or resp.get("text")
+            or ""
+        ).strip()
+        cache[doc_id] = text
+        return text
+    except Exception:
+        cache[doc_id] = ""
+        return ""
 
 
 def main() -> int:
@@ -111,12 +165,14 @@ def main() -> int:
     parser.add_argument("--api-url", default="http://127.0.0.1:12088")
     parser.add_argument("--llm-url", default="http://127.0.0.1:12095/v1")
     parser.add_argument("--model", default="gpt-6-luna")
-    parser.add_argument("--mode", default="recall", choices=["recall", "reflect"])
+    parser.add_argument("--mode", default="ep_sota", choices=["recall", "ep_sota"])
     parser.add_argument("--api-key", default="local")
     parser.add_argument("--budget", default="high", choices=["low", "mid", "high"])
     parser.add_argument("--max-tokens", type=int, default=6000)
-    parser.add_argument("--max-contexts", type=int, default=2, help="Number of shared persona contexts to evaluate")
-    parser.add_argument("--limit", type=int, default=20, help="Max total questions across selected contexts")
+    parser.add_argument("--chunk-turns", type=int, default=8)
+    parser.add_argument("--top-source-docs", type=int, default=8)
+    parser.add_argument("--max-contexts", type=int, default=3)
+    parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--keep-bank", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -133,7 +189,11 @@ def main() -> int:
             by_ctx[row["shared_context_id"]].append(row)
 
     selected_ctx_ids = list(by_ctx.keys())[: args.max_contexts]
-    print(f"Selected {len(selected_ctx_ids)} shared persona contexts (limit={args.limit} questions)...", flush=True)
+    print(
+        f"PersonaMem-32K [{args.mode}] — {len(selected_ctx_ids)} contexts, "
+        f"limit={args.limit}, chunk_turns={args.chunk_turns}, model={args.model}",
+        flush=True,
+    )
 
     results = []
     t_start = time.perf_counter()
@@ -145,26 +205,32 @@ def main() -> int:
         qrows = by_ctx[ctx_id][: max(0, args.limit - len(results))]
         bank_id = f"bench-pmem-{uuid.uuid4().hex[:10]}"
         base = f"{args.api_url.rstrip('/')}/v1/default/banks/{bank_id}"
+        doc_cache: dict[str, str] = {}
 
         try:
-            chunks = _chunk_messages(msgs, chunk_turns=24)
+            blocks = _chunk_messages_with_spans(msgs, chunk_turns=args.chunk_turns)
             items = [
                 {
-                    "content": c,
-                    "document_id": f"{ctx_id[:12]}:chunk-{i}",
-                    "context": f"Persona dialogue block {i}",
+                    "content": b["content"],
+                    "timestamp": b["timestamp"],
+                    "document_id": f"{ctx_id[:10]}:t{b['start_idx']}-{b['end_idx']}",
+                    "context": f"Turns {b['start_idx']}..{b['end_idx']} of user conversation",
                 }
-                for i, c in enumerate(chunks)
+                for b in blocks
             ]
-            print(f"Ingesting {len(items)} dialogue blocks into isolated bank {bank_id}...", flush=True)
-            for i in range(0, len(items), 2):
+            # Keep local raw map as fallback in case a bank omits original_text
+            raw_by_doc = {it["document_id"]: it["content"] for it in items}
+            first_doc_id = items[0]["document_id"] if items else ""
+
+            print(f"Ingesting {len(items)} fine-grained blocks into {bank_id}...", flush=True)
+            for i in range(0, len(items), 3):
                 _http_json(
                     "POST",
                     f"{base}/memories",
-                    {"items": items[i : i + 2], "async": False},
+                    {"items": items[i : i + 3], "async": False},
                     timeout=300.0,
                 )
-                print(f"  ingested {min(i + 2, len(items))}/{len(items)} blocks", flush=True)
+                print(f"  ingested {min(i + 3, len(items))}/{len(items)} blocks", flush=True)
 
             for qrow in qrows:
                 qid = qrow["question_id"]
@@ -172,27 +238,77 @@ def main() -> int:
                 user_msg = qrow["user_question_or_message"]
                 gold = qrow["correct_answer"].strip().lower()
                 options = ast.literal_eval(qrow["all_options"])
+                end_turn = int(qrow.get("end_index_in_shared_context") or len(msgs))
 
                 t0 = time.perf_counter()
-                if args.mode == "reflect":
-                    reflect_resp = _http_json(
-                        "POST",
-                        f"{base}/reflect",
-                        {
-                            "query": (
-                                f"Given this user message: '{user_msg}', summarize all relevant user preferences, "
-                                "persona traits, preference updates, and reasons for any preference changes."
-                            ),
-                            "budget": args.budget,
-                            "max_tokens": args.max_tokens,
-                        },
-                        timeout=120.0,
-                    )
+                if args.mode == "ep_sota":
+                    # General 3-facet EP recall: (1) user message, (2) persona & preferences, (3) preference updates & reasons
+                    facets = [
+                        user_msg,
+                        f"user persona, preferences, likes, dislikes related to: {user_msg[:180]}",
+                        "user changed preference, updated opinion, reason for change, recent favorite or dislike",
+                    ]
+                    seen_ids: set[str] = set()
+                    rlist: list[dict[str, Any]] = []
+                    doc_scores: dict[str, float] = collections.defaultdict(float)
+                    for f_idx, fq in enumerate(facets):
+                        resp = _http_json(
+                            "POST",
+                            f"{base}/memories/recall",
+                            {
+                                "query": fq,
+                                "budget": args.budget,
+                                "max_tokens": args.max_tokens // 2,
+                            },
+                            timeout=90.0,
+                        )
+                        weight = 1.5 if f_idx == 0 else 1.0
+                        for rank, r in enumerate(resp.get("results", [])):
+                            doc_id = r.get("document_id") or r.get("source_document_id") or ""
+                            # Respect causal time: ignore turns after this question's end_turn
+                            if doc_id and _doc_end_turn(doc_id) > end_turn:
+                                continue
+                            rid = str(r.get("id") or f"{doc_id}:{rank}")
+                            if rid not in seen_ids:
+                                seen_ids.add(rid)
+                                rlist.append(r)
+                            if doc_id:
+                                doc_scores[doc_id] += weight / (rank + 1.0)
+
+                    # Always include initial persona bio doc (Turn 0) if causally prior, plus top-ranked source docs
+                    ranked_docs = [d for d, _ in sorted(doc_scores.items(), key=lambda x: -x[1])]
+                    selected_docs: list[str] = []
+                    if first_doc_id and _doc_end_turn(first_doc_id) <= end_turn:
+                        selected_docs.append(first_doc_id)
+                    for d in ranked_docs:
+                        if d not in selected_docs and len(selected_docs) < args.top_source_docs:
+                            selected_docs.append(d)
+                    # Sort chronologically so newer preference updates appear AFTER older ones
+                    selected_docs.sort(key=_doc_end_turn)
+
+                    source_blocks = []
+                    readback_hits = 0
+                    for d in selected_docs:
+                        txt = _read_source_document(base, d, doc_cache) or raw_by_doc.get(d, "")
+                        if txt:
+                            readback_hits += 1
+                            source_blocks.append(f"=== Source {d} ===\n{txt}")
+
                     recall_ms = round((time.perf_counter() - t0) * 1000.0, 1)
-                    based_on = reflect_resp.get("based_on") or []
-                    rlist = based_on if isinstance(based_on, list) else []
-                    sourced = len(rlist) if rlist else (1 if reflect_resp.get("text") else 0)
-                    context_block = (reflect_resp.get("text") or "").strip()
+                    sourced = sum(
+                        1 for r in rlist if r.get("document_id") or r.get("source_document_id") or r.get("id")
+                    )
+                    mem_summary = "\n".join(
+                        f"- [{r.get('document_id') or 'mem'}] {(r.get('text') or '').strip()}"
+                        for r in rlist[:24]
+                        if (r.get("text") or "").strip()
+                    )
+                    context_block = (
+                        "### Extracted Memory Highlights\n"
+                        f"{mem_summary}\n\n"
+                        "### Verified Original Source Passages (Chronological Order — Later Turns Supersede Earlier Preferences)\n"
+                        + "\n\n".join(source_blocks)
+                    )
                 else:
                     recall_resp = _http_json(
                         "POST",
@@ -209,23 +325,24 @@ def main() -> int:
                     sourced = sum(
                         1 for r in rlist if r.get("document_id") or r.get("source_document_id") or r.get("id")
                     )
-                    mem_lines = [
-                        f"- [{r.get('occurred_start') or r.get('mentioned_at') or ''}] {(r.get('text') or '').strip()}"
-                        for r in rlist
-                        if (r.get("text") or "").strip()
-                    ]
-                    context_block = "\n".join(mem_lines)
-                options_text = "\n".join(options)
+                    readback_hits = 0
+                    context_block = "\n".join(
+                        f"- {(r.get('text') or '').strip()}" for r in rlist if (r.get("text") or "").strip()
+                    )
 
+                options_text = "\n".join(options)
                 prompt = (
-                    "You are selecting the single response that best matches the user's known preferences, "
-                    "persona, and most recent preference evolution based ONLY on the retrieved memories below. "
-                    "Pay close attention to preference updates (newer preferences supersede older ones) and the exact reasons behind updates.\n\n"
-                    f"Retrieved Memories:\n{context_block or '(none)'}\n\n"
-                    f"User Message: {user_msg}\n\n"
-                    f"Options:\n{options_text}\n\n"
-                    "Think briefly about which option aligns with the latest user preference and avoids contradictions, "
-                    "then end your response with the final choice in parentheses, e.g. (a), (b), (c), or (d)."
+                    "You are selecting the SINGLE best assistant response for the user based strictly on the "
+                    "chronological evidence below.\n"
+                    "Rules:\n"
+                    "1. Later turns supersede earlier turns when the user's preference or opinion evolved.\n"
+                    "2. Check every option for factual contradictions against the verified source passages.\n"
+                    "3. Pay close attention to the exact reasons the user gave for changing preferences.\n\n"
+                    f"{context_block}\n\n"
+                    f"User's Current Message (at Turn {end_turn}): {user_msg}\n\n"
+                    f"Candidate Options:\n{options_text}\n\n"
+                    "Briefly verify each option against the evidence, then end with ONLY the final choice letter "
+                    "in parentheses, e.g. (a), (b), (c), or (d)."
                 )
                 raw_pred = _chat_completion(
                     args.llm_url,
@@ -233,11 +350,9 @@ def main() -> int:
                     [{"role": "user", "content": prompt}],
                     api_key=args.api_key,
                     temperature=0.0,
-                    max_tokens=200,
+                    max_tokens=320,
                 )
-                # Extract the last parenthesized choice (a)-(d)
-                matches = re.findall(r"\(([a-dA-D])\)", raw_pred)
-                pred = f"({matches[-1].lower()})" if matches else _extract_choice(raw_pred)
+                pred = _extract_choice(raw_pred)
                 correct = pred == gold
                 results.append(
                     {
@@ -246,6 +361,7 @@ def main() -> int:
                         "topic": qrow.get("topic", ""),
                         "recall_ms": recall_ms,
                         "recalled_count": len(rlist),
+                        "readback_docs": readback_hits,
                         "source_attribution_ratio": round(sourced / len(rlist), 4) if rlist else 0.0,
                         "est_context_tokens": max(1, len(context_block) // 4) if context_block else 0,
                         "pred": pred,
@@ -255,7 +371,7 @@ def main() -> int:
                 )
                 print(
                     f"[{len(results)}/{args.limit}] {qtype} | {'OK' if correct else 'MISS'} "
-                    f"(pred={pred}, gold={gold}) | recall={recall_ms}ms | tok~{len(context_block)//4}",
+                    f"(pred={pred}, gold={gold}) | recall+readback={recall_ms}ms | docs={readback_hits} | tok~{len(context_block)//4}",
                     flush=True,
                 )
         finally:
@@ -280,11 +396,14 @@ def main() -> int:
 
     summary = {
         "benchmark": "PersonaMem-32K",
+        "mode": args.mode,
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "config": {
             "model": args.model,
             "budget": args.budget,
             "max_tokens": args.max_tokens,
+            "chunk_turns": args.chunk_turns,
+            "top_source_docs": args.top_source_docs,
             "contexts": len(selected_ctx_ids),
             "evaluated": len(results),
         },
